@@ -59,20 +59,37 @@ def register(req: RegisterRequest, response: Response, db: Session = Depends(get
             detail="Password must be at least 8 characters long.",
         )
 
-    existing = db.query(User).filter(User.email == email).first()
+    try:
+        existing = db.query(User).filter(User.email == email).first()
+    except Exception as e:
+        db.rollback()
+        print(f"[Auth] Database error checking existing user {email}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error checking account: {e}",
+        )
+
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="An account with this email address already exists. Please log in.",
         )
 
-    user = User(
-        email=email,
-        password_hash=hash_password(req.password),
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
+    try:
+        user = User(
+            email=email,
+            password_hash=hash_password(req.password),
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    except Exception as e:
+        db.rollback()
+        print(f"[Auth] Database error creating user {email}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error creating user: {e}",
+        )
 
     # Persist account to persisted_accounts.json so it survives container reboots
     try:
@@ -97,13 +114,17 @@ def register(req: RegisterRequest, response: Response, db: Session = Depends(get
 
     # Safe backward-compatibility migration:
     # If unowned legacy memories or goals exist, claim them for the first user
-    unowned_count = db.query(Memory).filter(Memory.user_id.is_(None)).count()
-    if unowned_count > 0:
-        db.query(Memory).filter(Memory.user_id.is_(None)).update({"user_id": user.id})
-        db.query(Goal).filter(Goal.user_id.is_(None)).update({"user_id": user.id})
-        db.commit()
+    try:
+        unowned_count = db.query(Memory).filter(Memory.user_id.is_(None)).count()
+        if unowned_count > 0:
+            db.query(Memory).filter(Memory.user_id.is_(None)).update({"user_id": user.id})
+            db.query(Goal).filter(Goal.user_id.is_(None)).update({"user_id": user.id})
+            db.commit()
+    except Exception as _e:
+        db.rollback()
+        print(f"[Auth] Legacy memory claim notice: {_e}")
 
-    token = create_access_token({"sub": user.id, "email": user.email})
+    token = create_access_token({"sub": str(user.id), "email": user.email})
     set_auth_cookie(response, token)
 
     return {
@@ -124,7 +145,16 @@ def login(req: LoginRequest, response: Response, db: Session = Depends(get_db)):
             detail="Email and password are required.",
         )
 
-    user = db.query(User).filter(User.email == email).first()
+    try:
+        user = db.query(User).filter(User.email == email).first()
+    except Exception as e:
+        db.rollback()
+        print(f"[Auth] Database error looking up user {email}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error during login: {e}",
+        )
+
     valid_pass = False
     if user:
         valid_pass = verify_password(req.password, user.password_hash) or verify_password(req.password.strip(), user.password_hash)
@@ -136,7 +166,7 @@ def login(req: LoginRequest, response: Response, db: Session = Depends(get_db)):
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    token = create_access_token({"sub": user.id, "email": user.email})
+    token = create_access_token({"sub": str(user.id), "email": user.email})
     set_auth_cookie(response, token)
 
     return {

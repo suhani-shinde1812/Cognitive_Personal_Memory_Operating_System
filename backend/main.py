@@ -16,6 +16,7 @@ except ImportError:
 
 from typing import Optional
 from fastapi import FastAPI, Request, Depends
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
@@ -94,11 +95,27 @@ app.add_middleware(LoggingMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_origin_regex=r"^https:\/\/.*\.onrender\.com$",
+    allow_origin_regex=r"^https?:\/\/.*\.onrender\.com$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    origin = request.headers.get("origin")
+    headers = {}
+    if origin:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+        headers["Access-Control-Allow-Methods"] = "*"
+        headers["Access-Control-Allow-Headers"] = "*"
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc), "error": type(exc).__name__},
+        headers=headers,
+    )
 
 # Static uploads directory
 uploads_dir_name = os.getenv("UPLOAD_DIR", "uploads")
@@ -307,19 +324,40 @@ def _run_db_migrations():
 
             # 2. Add missing columns safely with IF NOT EXISTS
             pg_migrations = [
+                # users table
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR;",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR;",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at VARCHAR;",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at VARCHAR;",
+                # memories table
                 "ALTER TABLE memories ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;",
                 "ALTER TABLE memories ADD COLUMN IF NOT EXISTS parent_id INTEGER;",
                 "ALTER TABLE memories ADD COLUMN IF NOT EXISTS user_id INTEGER;",
+                # goals table
                 "ALTER TABLE goals ADD COLUMN IF NOT EXISTS user_id INTEGER;",
+                # sync_devices table
                 "ALTER TABLE sync_devices ADD COLUMN IF NOT EXISTS user_id INTEGER;",
-                "ALTER TABLE indexed_files ADD COLUMN IF NOT EXISTS user_id INTEGER;",
                 "ALTER TABLE sync_devices ADD COLUMN IF NOT EXISTS pairing_code VARCHAR;",
+                # indexed_files table
+                "ALTER TABLE indexed_files ADD COLUMN IF NOT EXISTS user_id INTEGER;",
             ]
             for stmt in pg_migrations:
                 try:
                     conn.execute(text(stmt))
                 except Exception:
                     pass
+
+            # 3. Ensure users.id has auto-increment sequence and integer type if needed
+            try:
+                conn.execute(text("CREATE SEQUENCE IF NOT EXISTS users_id_seq;"))
+                try:
+                    conn.execute(text("ALTER TABLE users ALTER COLUMN id TYPE INTEGER USING id::integer;"))
+                    conn.execute(text("ALTER TABLE users ALTER COLUMN id SET DEFAULT nextval('users_id_seq');"))
+                    conn.execute(text("ALTER SEQUENCE users_id_seq OWNED BY users.id;"))
+                except Exception:
+                    conn.execute(text("ALTER TABLE users ALTER COLUMN id SET DEFAULT nextval('users_id_seq')::text;"))
+            except Exception as _e:
+                print(f"[Migration] users.id sequence notice: {_e}")
         print("[CogniSphere] PostgreSQL migrations verified.")
     except Exception as e:
         print(f"[Migration] PostgreSQL migration notice: {e}")
