@@ -16,7 +16,7 @@ class User(Base):
 
     id            = Column(Integer, primary_key=True, index=True)
     email         = Column(String, unique=True, index=True, nullable=False)
-    password_hash = Column(String, nullable=False)
+    password_hash = Column(String, nullable=True)
     created_at    = Column(String, default=lambda: datetime.now(timezone.utc).isoformat())
     updated_at    = Column(String, default=lambda: datetime.now(timezone.utc).isoformat(), onupdate=lambda: datetime.now(timezone.utc).isoformat())
 

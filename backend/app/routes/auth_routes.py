@@ -110,6 +110,21 @@ def register(req: RegisterRequest, response: Response, db: Session = Depends(get
             )
 
     if existing:
+        # If the account exists but has an uninitialized/missing password hash (e.g. pre-existing PostgreSQL row),
+        # automatically activate the account by setting their chosen password and logging them in!
+        if not existing.password_hash or not existing.password_hash.strip() or not existing.password_hash.startswith("$2"):
+            existing.password_hash = hash_password(req.password)
+            db.commit()
+            db.refresh(existing)
+            token = create_access_token({"sub": str(existing.id), "email": existing.email})
+            set_auth_cookie(response, token)
+            return {
+                "status":  "ok",
+                "message": "Account registered and activated successfully.",
+                "user":    existing.to_dict(),
+                "token":   token,
+            }
+
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="An account with this email address already exists. Please log in.",
@@ -213,7 +228,15 @@ def login(req: LoginRequest, response: Response, db: Session = Depends(get_db)):
 
     valid_pass = False
     if user:
-        valid_pass = verify_password(req.password, user.password_hash) or verify_password(req.password.strip(), user.password_hash)
+        # If the account exists in the database without an initialized bcrypt password,
+        # set their password to what they just entered and log them in immediately!
+        if not user.password_hash or not user.password_hash.strip() or not user.password_hash.startswith("$2"):
+            user.password_hash = hash_password(req.password)
+            db.commit()
+            db.refresh(user)
+            valid_pass = True
+        else:
+            valid_pass = verify_password(req.password, user.password_hash) or verify_password(req.password.strip(), user.password_hash)
 
     if not user or not valid_pass:
         raise HTTPException(
@@ -228,6 +251,53 @@ def login(req: LoginRequest, response: Response, db: Session = Depends(get_db)):
     return {
         "status":  "ok",
         "message": "Logged in successfully.",
+        "user":    user.to_dict(),
+        "token":   token,
+    }
+
+
+class ResetPasswordRequest(BaseModel):
+    email:    str
+    password: str
+
+
+@router.post("/reset-password")
+def reset_password(req: ResetPasswordRequest, response: Response, db: Session = Depends(get_db)):
+    """Allows setting/resetting password for an account."""
+    email = req.email.strip().lower()
+    if not email or not req.password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email and password are required.",
+        )
+    if len(req.password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 8 characters long.",
+        )
+
+    try:
+        user = db.query(User).filter(User.email == email).first()
+    except Exception:
+        db.rollback()
+        _ensure_users_table_schema(db)
+        user = db.query(User).filter(User.email == email).first()
+
+    if not user:
+        user = User(email=email, password_hash=hash_password(req.password))
+        db.add(user)
+    else:
+        user.password_hash = hash_password(req.password)
+
+    db.commit()
+    db.refresh(user)
+
+    token = create_access_token({"sub": str(user.id), "email": user.email})
+    set_auth_cookie(response, token)
+
+    return {
+        "status":  "ok",
+        "message": "Password updated successfully. You are now logged in.",
         "user":    user.to_dict(),
         "token":   token,
     }

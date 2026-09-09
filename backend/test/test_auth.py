@@ -83,3 +83,34 @@ def test_register_and_login_flow():
     # 11. POST /auth/logout
     logout_res = client.post("/auth/logout")
     assert logout_res.status_code == 200
+
+    # 12. POST /auth/reset-password
+    reset_pass = "ResetPassword987!"
+    reset_res = client.post("/auth/reset-password", json={"email": email, "password": reset_pass})
+    assert reset_res.status_code == 200
+    assert reset_res.json()["status"] == "ok"
+    # Login with newly reset password
+    assert client.post("/auth/login", json={"email": email, "password": reset_pass}).status_code == 200
+
+
+def test_legacy_unhashed_account_activation():
+    from database.database import SessionLocal
+    from app.models.user import User
+
+    legacy_email = f"legacy_{int(time.time())}@cognisphere.ai"
+    db = SessionLocal()
+    # Insert user with empty password_hash mimicking unhashed or legacy row
+    u = User(email=legacy_email, password_hash="")
+    db.add(u)
+    db.commit()
+    db.close()
+
+    # Registering should auto-activate instead of 409
+    reg = client.post("/auth/register", json={"email": legacy_email, "password": "NewValidPassword123!"})
+    assert reg.status_code == 201
+    assert "token" in reg.json()
+
+    # Subsequent login works
+    login = client.post("/auth/login", json={"email": legacy_email, "password": "NewValidPassword123!"})
+    assert login.status_code == 200
+
