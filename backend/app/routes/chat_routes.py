@@ -1,7 +1,7 @@
 """
 app/routes/chat_routes.py
 ==========================
-Chat endpoint â€” RAG over ACMA-ranked memories.
+Chat endpoint — RAG over ACMA-ranked memories.
 """
 
 from fastapi import APIRouter, Depends
@@ -31,6 +31,12 @@ def chat(
     """
     Ask a question over your memories.
     Scoped strictly to the authenticated user's memories.
+
+    Response includes:
+    - answer: str — the AI answer (or fast structured memory summary)
+    - sources: list — each memory used, with file_path and abstract
+    - fast_answer: bool — True if answered without Ollama (instant)
+    - memories_used: list — full memory objects used for retrieval
     """
     user_id = current_user.id if current_user else None
     result = chat_with_memories(
@@ -40,5 +46,3 @@ def chat(
         user_id=user_id,
     )
     return result
-
-

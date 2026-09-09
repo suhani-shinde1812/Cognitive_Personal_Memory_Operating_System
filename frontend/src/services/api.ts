@@ -178,11 +178,28 @@ export interface SearchResult {
   results: Memory[];
 }
 
+export interface MemorySource {
+  memory_id:       number;
+  title:           string;
+  file_type:       string;
+  source:          string;       // original filename
+  file_path:       string;       // full OS path or best available address
+  abstract:        string;       // 1-3 sentence clean summary
+  relevance_score: number;
+  timestamp:       string;
+  image:           string;
+}
+
 export interface ChatResponse {
   answer:        string;
-  session_id:    string;
+  session_id?:   string;
+  intent?:       string;
+  confidence?:   number;
+  fast_answer?:  boolean;        // true if answered without Ollama
   memories_used: { id: number; title: string; activation_score: number; activation_reason: string; matched_goals?: string[]; components?: Memory["components"] }[];
   goal_context:  string[];
+  sources:       MemorySource[]; // enriched sources with file_path + abstract
+  plan?:         Record<string, any>;
 }
 
 export interface GoalProgress {
@@ -460,6 +477,21 @@ export const pauseWatcherLocation  = (id: number) =>
   api.post<WatcherLocation>(`/watcher/locations/${id}/pause`).then(r => r.data);
 export const resumeWatcherLocation = (id: number) =>
   api.post<WatcherLocation>(`/watcher/locations/${id}/resume`).then(r => r.data);
+
+export interface LocationIndexStatus {
+  location_id:  number;
+  path:         string;
+  running:      boolean;
+  total:        number;
+  processed:    number;
+  skipped:      number;
+  errors:       number;
+  done:         boolean;
+  current_file: string;
+}
+
+export const getLocationIndexStatus = (id: number) =>
+  api.get<LocationIndexStatus>(`/watcher/locations/${id}/index-status`).then(r => r.data);
 
 // ── Decay ─────────────────────────────────────────────────────────────────────
 

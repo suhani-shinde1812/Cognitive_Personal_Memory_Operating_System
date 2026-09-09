@@ -18,6 +18,8 @@ import {
   deleteWatcherLocation,
   generatePairingCode,
   getSyncDevices,
+  getLocationIndexStatus,
+  LocationIndexStatus,
   WatcherLocation,
   api,
   API_BASE_URL,
@@ -60,6 +62,10 @@ export default function FolderPermissionsCard({
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedCmd, setCopiedCmd] = useState(false);
 
+  // Auto-indexing progress: keyed by location id
+  const [indexingStatus, setIndexingStatus] = useState<Record<number, LocationIndexStatus>>({});
+  const indexPollRefs = useRef<Record<number, NodeJS.Timeout>>({});
+
   // Syncing state
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState<{
@@ -70,13 +76,41 @@ export default function FolderPermissionsCard({
   } | null>(null);
   const [targetSyncFolder, setTargetSyncFolder] = useState<string | null>(null);
 
+  // Auto-index polling helper
+  const startIndexPolling = (locationId: number) => {
+    // Clear existing poll if any
+    if (indexPollRefs.current[locationId]) {
+      clearInterval(indexPollRefs.current[locationId]);
+    }
+    const poll = setInterval(async () => {
+      try {
+        const status = await getLocationIndexStatus(locationId);
+        setIndexingStatus(prev => ({ ...prev, [locationId]: status }));
+        if (status.done && !status.running) {
+          clearInterval(poll);
+          delete indexPollRefs.current[locationId];
+          if (status.processed > 0 || status.skipped > 0) {
+            queryClient.invalidateQueries("recent");
+            queryClient.invalidateQueries("stats");
+            if (onMemoriesUpdated) onMemoriesUpdated();
+          }
+        }
+      } catch {
+        // Silently ignore polling errors
+      }
+    }, 2000);
+    indexPollRefs.current[locationId] = poll;
+  };
+
   // Mutations
   const resumeMutation = useMutation(
     async (id: number) => await resumeWatcherLocation(id),
     {
-      onSuccess: () => {
+      onSuccess: (data, locationId) => {
         queryClient.invalidateQueries("watcher-locations");
-        toast.success("Folder access agreed & enabled!");
+        toast.success("Folder access agreed & enabled! Converting documents to memories…");
+        // Start polling auto-index progress
+        startIndexPolling(locationId);
       },
       onError: () => {
         toast.error("Failed to enable folder");
@@ -510,6 +544,50 @@ export default function FolderPermissionsCard({
                     Sync Files Now
                   </button>
                 </div>
+
+                {/* ── Auto-Index Progress (shown after Allow) ── */}
+                {indexingStatus[loc.id] && (
+                  <div className="mt-2 space-y-1.5">
+                    {indexingStatus[loc.id].running ? (
+                      <>
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-brand-300 font-semibold flex items-center gap-1.5">
+                            <RefreshCw size={11} className="animate-spin" />
+                            Converting to memories…
+                          </span>
+                          <span className="font-mono text-gray-300">
+                            {indexingStatus[loc.id].processed}/{indexingStatus[loc.id].total}
+                          </span>
+                        </div>
+                        <div className="w-full h-1.5 bg-[#1a1a2e] rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-brand-500 to-emerald-400 transition-all duration-300"
+                            style={{
+                              width: indexingStatus[loc.id].total > 0
+                                ? `${(indexingStatus[loc.id].processed / indexingStatus[loc.id].total) * 100}%`
+                                : "0%",
+                            }}
+                          />
+                        </div>
+                        {indexingStatus[loc.id].current_file && (
+                          <p className="text-[10px] text-gray-400 font-mono truncate">
+                            {indexingStatus[loc.id].current_file}
+                          </p>
+                        )}
+                      </>
+                    ) : indexingStatus[loc.id].done && indexingStatus[loc.id].total > 0 ? (
+                      <p className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1.5">
+                        <Sparkles size={11} />
+                        {indexingStatus[loc.id].processed} file{indexingStatus[loc.id].processed !== 1 ? "s" : ""} converted to memories
+                        {indexingStatus[loc.id].skipped > 0 && (
+                          <span className="text-gray-400 font-normal">
+                            ({indexingStatus[loc.id].skipped} already indexed)
+                          </span>
+                        )}
+                      </p>
+                    ) : null}
+                  </div>
+                )}
               </div>
             );
           })}

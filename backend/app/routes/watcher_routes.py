@@ -4,12 +4,17 @@ watcher_routes.py
 =================
 API endpoints to control the desktop folder watcher and manage
 user-authorized folder and drive permissions.
+
+v2: resume_location now triggers background auto-indexing of all
+    documents in the folder so memories are created automatically
+    when a user clicks "Agree & Allow". A polling endpoint
+    /watcher/locations/{id}/index-status tracks progress.
 """
 
 from typing import Optional, List
 from pathlib import Path
 from pydantic import BaseModel
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from database.database import get_db
@@ -257,10 +262,17 @@ def pause_location(
 @router.post("/locations/{location_id}/resume")
 def resume_location(
     location_id: int,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Resume synchronization for a specific location."""
+    """
+    Resume synchronization for a specific location.
+
+    Also triggers a background auto-index job that converts all supported
+    documents in the folder into CogniSphere memories automatically.
+    Progress is available via GET /watcher/locations/{id}/index-status.
+    """
     loc = (
         db.query(WatcherLocation)
         .filter(WatcherLocation.id == location_id, WatcherLocation.user_id == str(current_user.id))
@@ -272,7 +284,59 @@ def resume_location(
     loc.enabled = True
     db.commit()
     db.refresh(loc)
-    return loc.to_dict()
+
+    # 🚀 Kick off background auto-indexing of all files in this folder
+    try:
+        from app.services.folder_watcher import auto_index_location
+        background_tasks.add_task(
+            auto_index_location,
+            location_id=loc.id,
+            folder_path=loc.path,
+            user_id=str(current_user.id),
+        )
+        print(f"[Watcher] Auto-index queued for location #{loc.id}: {loc.path}")
+    except Exception as e:
+        print(f"[Watcher] Could not queue auto-index: {e}")
+
+    result = loc.to_dict()
+    result["auto_indexing"] = True
+    return result
+
+
+@router.get("/locations/{location_id}/index-status")
+def location_index_status(
+    location_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get the current auto-indexing progress for a folder location.
+
+    Returns:
+        {
+            "running": bool,       # True while indexing is in progress
+            "total": int,          # Total files found
+            "processed": int,      # Files successfully converted to memories
+            "skipped": int,        # Duplicates skipped
+            "errors": int,         # Files that failed
+            "done": bool,          # True when indexing is complete
+            "current_file": str    # Filename currently being processed
+        }
+    """
+    # Verify the location belongs to this user
+    loc = (
+        db.query(WatcherLocation)
+        .filter(WatcherLocation.id == location_id, WatcherLocation.user_id == str(current_user.id))
+        .first()
+    )
+    if not loc:
+        raise HTTPException(status_code=404, detail="Watcher location not found")
+
+    from app.services.folder_watcher import get_index_status
+    status_data = get_index_status(location_id)
+    status_data["location_id"] = location_id
+    status_data["path"] = loc.path
+    return status_data
 
 
 @router.post("/start")
