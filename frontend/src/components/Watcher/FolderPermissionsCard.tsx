@@ -106,17 +106,34 @@ export default function FolderPermissionsCard({
   const resumeMutation = useMutation(
     async (id: number) => await resumeWatcherLocation(id),
     {
-      onSuccess: (data, locationId) => {
+      onSuccess: () => {
         queryClient.invalidateQueries("watcher-locations");
-        toast.success("Folder access agreed & enabled! Converting documents to memories…");
-        // Start polling auto-index progress
-        startIndexPolling(locationId);
       },
       onError: () => {
         toast.error("Failed to enable folder");
       },
     }
   );
+
+  // ── Allow + Auto-Sync (the real fix for cloud deployments) ───────────────
+  // Since the backend runs on Render (cloud), its filesystem is empty.
+  // We must upload files FROM the user's local PC via the browser.
+  // Clicking "Agree & Allow" = enable in DB + immediately open folder picker.
+  const handleAllowAndSync = async (loc: WatcherLocation) => {
+    // 1. Enable in DB first
+    try {
+      await resumeWatcherLocation(loc.id);
+      queryClient.invalidateQueries("watcher-locations");
+    } catch {
+      toast.error("Failed to enable folder");
+      return;
+    }
+
+    toast.success(`✅ ${loc.display_name} allowed! Opening file picker to sync your documents…`, { duration: 4000 });
+
+    // 2. Immediately open folder picker so files are uploaded from local PC
+    await handleSyncFolderClick(loc.display_name);
+  };
 
   const pauseMutation = useMutation(
     async (id: number) => await pauseWatcherLocation(id),
@@ -250,25 +267,42 @@ export default function FolderPermissionsCard({
     let successCount = 0;
     const total = files.length;
 
-    for (let i = 0; i < total; i++) {
-      const file = files[i];
+    // ── Concurrent batch upload (5 files at a time for speed) ─────────────
+    const CONCURRENCY = 5;
+    const chunks: File[][] = [];
+    for (let i = 0; i < total; i += CONCURRENCY) {
+      chunks.push(files.slice(i, i + CONCURRENCY));
+    }
+
+    let processed = 0;
+
+    for (const chunk of chunks) {
+      // Update progress with first file of chunk
       setSyncProgress({
-        current: i + 1,
+        current: processed + 1,
         total,
-        filename: file.name,
+        filename: chunk[0].name,
         folder: folderName,
       });
 
-      try {
-        const formData = new FormData();
-        formData.append("file", file);
-        await api.post("/upload/", formData, {
-          headers: { "Content-Type": "multipart/form-data" },
-        });
-        successCount++;
-      } catch (err) {
-        console.warn(`Failed to upload ${file.name}:`, err);
+      // Upload chunk concurrently
+      const results = await Promise.allSettled(
+        chunk.map(async (file) => {
+          const formData = new FormData();
+          formData.append("file", file);
+          await api.post("/upload/", formData, {
+            headers: { "Content-Type": "multipart/form-data" },
+          });
+        })
+      );
+
+      for (const r of results) {
+        if (r.status === "fulfilled") successCount++;
+        processed++;
       }
+
+      // Update progress after each chunk
+      setSyncProgress(prev => prev ? { ...prev, current: processed } : null);
     }
 
     setIsSyncing(false);
@@ -278,8 +312,8 @@ export default function FolderPermissionsCard({
     if (onMemoriesUpdated) onMemoriesUpdated();
 
     toast.success(
-      `Successfully converted ${successCount} of ${total} files from ${folderName} into AI memories!`,
-      { duration: 6000 }
+      `🧠 ${successCount} of ${total} files from ${folderName} converted into memories!`,
+      { duration: 8000 }
     );
   };
 
@@ -514,10 +548,11 @@ export default function FolderPermissionsCard({
                       if (isEnabled) {
                         pauseMutation.mutate(loc.id);
                       } else {
-                        resumeMutation.mutate(loc.id);
+                        // Allow + immediately open file picker to upload from local PC
+                        handleAllowAndSync(loc);
                       }
                     }}
-                    disabled={pauseMutation.isLoading || resumeMutation.isLoading}
+                    disabled={pauseMutation.isLoading || resumeMutation.isLoading || isSyncing}
                     className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer ${
                       isEnabled
                         ? "bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30"
@@ -530,7 +565,7 @@ export default function FolderPermissionsCard({
                       </>
                     ) : (
                       <>
-                        <Check size={12} /> Agree & Allow
+                        <Check size={12} /> Agree & Allow + Sync
                       </>
                     )}
                   </button>
@@ -545,49 +580,34 @@ export default function FolderPermissionsCard({
                   </button>
                 </div>
 
-                {/* ── Auto-Index Progress (shown after Allow) ── */}
-                {indexingStatus[loc.id] && (
+                {/* ── Browser Upload Progress (shown while syncing this folder) ── */}
+                {isSyncing && syncProgress && syncProgress.folder === loc.display_name && (
                   <div className="mt-2 space-y-1.5">
-                    {indexingStatus[loc.id].running ? (
-                      <>
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="text-brand-300 font-semibold flex items-center gap-1.5">
-                            <RefreshCw size={11} className="animate-spin" />
-                            Converting to memories…
-                          </span>
-                          <span className="font-mono text-gray-300">
-                            {indexingStatus[loc.id].processed}/{indexingStatus[loc.id].total}
-                          </span>
-                        </div>
-                        <div className="w-full h-1.5 bg-[#1a1a2e] rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-brand-500 to-emerald-400 transition-all duration-300"
-                            style={{
-                              width: indexingStatus[loc.id].total > 0
-                                ? `${(indexingStatus[loc.id].processed / indexingStatus[loc.id].total) * 100}%`
-                                : "0%",
-                            }}
-                          />
-                        </div>
-                        {indexingStatus[loc.id].current_file && (
-                          <p className="text-[10px] text-gray-400 font-mono truncate">
-                            {indexingStatus[loc.id].current_file}
-                          </p>
-                        )}
-                      </>
-                    ) : indexingStatus[loc.id].done && indexingStatus[loc.id].total > 0 ? (
-                      <p className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1.5">
-                        <Sparkles size={11} />
-                        {indexingStatus[loc.id].processed} file{indexingStatus[loc.id].processed !== 1 ? "s" : ""} converted to memories
-                        {indexingStatus[loc.id].skipped > 0 && (
-                          <span className="text-gray-400 font-normal">
-                            ({indexingStatus[loc.id].skipped} already indexed)
-                          </span>
-                        )}
-                      </p>
-                    ) : null}
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-brand-300 font-semibold flex items-center gap-1.5">
+                        <RefreshCw size={11} className="animate-spin" />
+                        Uploading & converting…
+                      </span>
+                      <span className="font-mono text-gray-300">
+                        {syncProgress.current}/{syncProgress.total}
+                      </span>
+                    </div>
+                    <div className="w-full h-1.5 bg-[#1a1a2e] rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-brand-500 to-emerald-400 transition-all duration-300"
+                        style={{
+                          width: syncProgress.total > 0
+                            ? `${(syncProgress.current / syncProgress.total) * 100}%`
+                            : "0%",
+                        }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-gray-400 font-mono truncate">
+                      {syncProgress.filename}
+                    </p>
                   </div>
                 )}
+
               </div>
             );
           })}
