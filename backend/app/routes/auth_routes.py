@@ -43,6 +43,41 @@ class ChangePasswordRequest(BaseModel):
     new_password:     str
 
 
+def _ensure_users_table_schema(db: Session) -> None:
+    """Safely ensures users table has required columns and sequence in PostgreSQL."""
+    from sqlalchemy import text
+    from database.database import is_sqlite
+    if is_sqlite:
+        return
+    stmts = [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR;",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR;",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at VARCHAR;",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at VARCHAR;",
+        "CREATE SEQUENCE IF NOT EXISTS users_id_seq;",
+    ]
+    for s in stmts:
+        try:
+            db.execute(text(s))
+            db.commit()
+        except Exception:
+            db.rollback()
+    try:
+        db.execute(text("ALTER TABLE users ALTER COLUMN id TYPE INTEGER USING id::integer;"))
+        db.commit()
+    except Exception:
+        db.rollback()
+    try:
+        db.execute(text("ALTER TABLE users ALTER COLUMN id SET DEFAULT nextval('users_id_seq');"))
+        db.commit()
+    except Exception:
+        try:
+            db.execute(text("ALTER TABLE users ALTER COLUMN id SET DEFAULT nextval('users_id_seq')::text;"))
+            db.commit()
+        except Exception:
+            db.rollback()
+
+
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 def register(req: RegisterRequest, response: Response, db: Session = Depends(get_db)):
     """Registers a new user and returns authentication session."""
@@ -61,13 +96,18 @@ def register(req: RegisterRequest, response: Response, db: Session = Depends(get
 
     try:
         existing = db.query(User).filter(User.email == email).first()
-    except Exception as e:
+    except Exception:
         db.rollback()
-        print(f"[Auth] Database error checking existing user {email}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error checking account: {e}",
-        )
+        _ensure_users_table_schema(db)
+        try:
+            existing = db.query(User).filter(User.email == email).first()
+        except Exception as retry_err:
+            db.rollback()
+            print(f"[Auth] Database error checking existing user {email}: {retry_err}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Database error checking account: {retry_err}",
+            )
 
     if existing:
         raise HTTPException(
@@ -83,13 +123,24 @@ def register(req: RegisterRequest, response: Response, db: Session = Depends(get
         db.add(user)
         db.commit()
         db.refresh(user)
-    except Exception as e:
+    except Exception:
         db.rollback()
-        print(f"[Auth] Database error creating user {email}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error creating user: {e}",
-        )
+        _ensure_users_table_schema(db)
+        try:
+            user = User(
+                email=email,
+                password_hash=hash_password(req.password),
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+        except Exception as retry_err:
+            db.rollback()
+            print(f"[Auth] Database error creating user {email}: {retry_err}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Database error creating user: {retry_err}",
+            )
 
     # Persist account to persisted_accounts.json so it survives container reboots
     try:
@@ -147,13 +198,18 @@ def login(req: LoginRequest, response: Response, db: Session = Depends(get_db)):
 
     try:
         user = db.query(User).filter(User.email == email).first()
-    except Exception as e:
+    except Exception:
         db.rollback()
-        print(f"[Auth] Database error looking up user {email}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error during login: {e}",
-        )
+        _ensure_users_table_schema(db)
+        try:
+            user = db.query(User).filter(User.email == email).first()
+        except Exception as retry_err:
+            db.rollback()
+            print(f"[Auth] Database error looking up user {email}: {retry_err}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Database error during login: {retry_err}",
+            )
 
     valid_pass = False
     if user:
