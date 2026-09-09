@@ -61,20 +61,38 @@ def _resolve_user_from_token(token: str, db: Session) -> Optional[User]:
     # 1. Attempt JWT access token decode
     payload = decode_access_token(token)
     if payload and "sub" in payload:
+        sub_val = payload["sub"]
         try:
-            user_id = int(payload["sub"])
+            user_id = int(sub_val)
             user = db.query(User).filter(User.id == user_id).first()
             if user:
                 return user
         except (ValueError, TypeError):
             pass
 
+        # Fallback if user id is stored as string/varchar in PostgreSQL
+        try:
+            user = db.query(User).filter(User.id == str(sub_val)).first()
+            if user:
+                return user
+        except Exception:
+            pass
+
     # 2. Check if this is a paired Desktop Agent device token (e.g. cs_...)
     device = db.query(SyncDevice).filter(SyncDevice.auth_token == token).first()
     if device and device.user_id:
-        user = db.query(User).filter(User.id == device.user_id).first()
-        if user:
-            return user
+        try:
+            user = db.query(User).filter(User.id == device.user_id).first()
+            if user:
+                return user
+        except Exception:
+            pass
+        try:
+            user = db.query(User).filter(User.id == str(device.user_id)).first()
+            if user:
+                return user
+        except Exception:
+            pass
 
     return None
 

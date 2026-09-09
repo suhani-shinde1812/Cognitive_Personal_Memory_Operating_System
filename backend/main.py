@@ -125,14 +125,15 @@ def startup():
     # to maintain minimal startup memory footprint (<100 MiB) on constrained environments (Render Free tier).
     print("[CogniSphere] AI models configured for on-demand lazy loading.")
 
-    # Create database tables (handles new tables like memory_history)
-    Base.metadata.create_all(bind=engine)
-    print("[CogniSphere] Database tables verified.")
+    # Create database tables (handles new tables like memory_history, watcher_locations)
+    try:
+        Base.metadata.create_all(bind=engine)
+        print("[CogniSphere] Database tables verified.")
+    except Exception as _e:
+        print(f"[CogniSphere] Database tables verification notice: {_e}")
 
-    # Lightweight SQLite migration for new columns (only if using SQLite)
-    if is_sqlite:
-        _run_sqlite_migrations()
-        print("[CogniSphere] SQLite migrations checked.")
+    # Lightweight database migrations (SQLite & PostgreSQL)
+    _run_db_migrations()
 
     # Load memory cache and build FAISS index
     try:
@@ -285,6 +286,45 @@ def _run_sqlite_migrations():
         print(f"[Migration] SQLite migration notice: {e}")
 
 
+def _run_db_migrations():
+    """
+    Lightweight schema migrations for both SQLite and PostgreSQL.
+    Safe to call multiple times.
+    """
+    if is_sqlite:
+        _run_sqlite_migrations()
+        return
+
+    # PostgreSQL migrations
+    try:
+        from sqlalchemy import text
+        with engine.begin() as conn:
+            # 1. Drop foreign key constraint on watcher_locations if it exists
+            try:
+                conn.execute(text("ALTER TABLE watcher_locations DROP CONSTRAINT IF EXISTS watcher_locations_user_id_fkey;"))
+            except Exception:
+                pass
+
+            # 2. Add missing columns safely with IF NOT EXISTS
+            pg_migrations = [
+                "ALTER TABLE memories ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;",
+                "ALTER TABLE memories ADD COLUMN IF NOT EXISTS parent_id INTEGER;",
+                "ALTER TABLE memories ADD COLUMN IF NOT EXISTS user_id INTEGER;",
+                "ALTER TABLE goals ADD COLUMN IF NOT EXISTS user_id INTEGER;",
+                "ALTER TABLE sync_devices ADD COLUMN IF NOT EXISTS user_id INTEGER;",
+                "ALTER TABLE indexed_files ADD COLUMN IF NOT EXISTS user_id INTEGER;",
+                "ALTER TABLE sync_devices ADD COLUMN IF NOT EXISTS pairing_code VARCHAR;",
+            ]
+            for stmt in pg_migrations:
+                try:
+                    conn.execute(text(stmt))
+                except Exception:
+                    pass
+        print("[CogniSphere] PostgreSQL migrations verified.")
+    except Exception as e:
+        print(f"[Migration] PostgreSQL migration notice: {e}")
+
+
 def _seed_persisted_users():
     """
     Restores persisted accounts from persisted_accounts.json on boot
@@ -332,8 +372,7 @@ def _seed_persisted_users():
 # Run initial table creation & migrations on import so test runners & TestClient have valid schema
 try:
     Base.metadata.create_all(bind=engine)
-    if is_sqlite:
-        _run_sqlite_migrations()
+    _run_db_migrations()
     _seed_persisted_users()
 except Exception as _e:
     print(f"[CogniSphere] Schema initialization notice: {_e}")
