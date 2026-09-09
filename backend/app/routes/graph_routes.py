@@ -30,7 +30,7 @@ def get_memory_graph(
     if current_user:
         # Filter nodes and edges to current user
         from app.models.memory import Memory
-        user_mem_ids = {m.id for m in db.query(Memory.id).filter(Memory.user_id == current_user.id).all()}
+        user_mem_ids = {m.id for m in db.query(Memory.id).filter(Memory.user_id == str(current_user.id)).all()}
         filtered_nodes = [n for n in graph.get("nodes", []) if n.get("id") in user_mem_ids]
         filtered_edges = [e for e in graph.get("edges", []) if e.get("source") in user_mem_ids and e.get("target") in user_mem_ids]
         return {
@@ -63,7 +63,7 @@ def get_memory_neighbors(
     """
     if current_user:
         from app.models.memory import Memory
-        mem = db.query(Memory).filter(Memory.id == memory_id, Memory.user_id == current_user.id).first()
+        mem = db.query(Memory).filter(Memory.id == memory_id, Memory.user_id == str(current_user.id)).first()
         if not mem:
             return {"memory_id": memory_id, "neighbors": []}
     neighbors = get_neighbors(db, memory_id, top_k=top_k)

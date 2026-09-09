@@ -513,5 +513,85 @@
     "email": "auth_test_user_1788603355@cognisphere.ai",
     "password_hash": "$2b$12$z3rnzKcVO3n.yip0K./dtObm0ZlauE1bhK7p7iEA4labYSrLA5Sau",
     "created_at": "2026-09-05T10:15:55.651663+00:00"
+  },
+  {
+    "email": "auth_test_user_1788968977@cognisphere.ai",
+    "password_hash": "$2b$12$oNnK7hAwvcttewM/g4.I.eI6naT/KgsOPQRsnRzfvU.Ha1wWdb4h6",
+    "created_at": "2026-09-09T15:49:37.991573+00:00"
+  },
+  {
+    "email": "user_a_1788968981@cognisphere.ai",
+    "password_hash": "$2b$12$08aefcyGuKuIq7wH94m.S.LTRyUxyvIyZtT8KfsGAX8Rr8NtcKbMO",
+    "created_at": "2026-09-09T15:49:42.117941+00:00"
+  },
+  {
+    "email": "user_b_1788968982@cognisphere.ai",
+    "password_hash": "$2b$12$KgUF0aqRFolslCH3SiLCsODaKmZZdu7dqmTtLYFYH7IzUg5BdPzWq",
+    "created_at": "2026-09-09T15:49:42.441669+00:00"
+  },
+  {
+    "email": "alice_sync_0474ed@example.com",
+    "password_hash": "$2b$12$bCFMRp2KbV..XZsZzL10ne.b7MSl95zkHlGjDGq3bZGrmoUUkNo7W",
+    "created_at": "2026-09-09T15:49:47.071362+00:00"
+  },
+  {
+    "email": "bob_sync_0474ed@example.com",
+    "password_hash": "$2b$12$19R5VCcjQksI9tx0aJe6POF/3zcqsUyLThle2N0623BFNy2m3uXDu",
+    "created_at": "2026-09-09T15:49:48.747152+00:00"
+  },
+  {
+    "email": "search_user_1788968990240@cognisphere.ai",
+    "password_hash": "$2b$12$abJBUuKVBMnKU4qcQiTkMegsCgW8S2A51gvkBbEPWIpvM5JFDDQ.i",
+    "created_at": "2026-09-09T15:49:50.571165+00:00"
+  },
+  {
+    "email": "watcher_user_a_1788968993@cognisphere.ai",
+    "password_hash": "$2b$12$SeVxxbNeeDjlAA2zSUS02er4alteR6abbdcFXsMnaXiR2NofVxey.",
+    "created_at": "2026-09-09T15:49:53.361143+00:00"
+  },
+  {
+    "email": "watcher_user_b_1788968993@cognisphere.ai",
+    "password_hash": "$2b$12$/qgKicC3CANHKK8IENntkefNRml04yWgSsib0gQ/rDQkZD8.BKVvO",
+    "created_at": "2026-09-09T15:49:53.706687+00:00"
+  },
+  {
+    "email": "auth_test_user_1788969616@cognisphere.ai",
+    "password_hash": "$2b$12$5Z.Fny1e.ioK/JH4tHwYnO8pErwxDymbydxexmO3NKgwMK5nXBFbq",
+    "created_at": "2026-09-09T16:00:17.242731+00:00"
+  },
+  {
+    "email": "user_a_1788969620@cognisphere.ai",
+    "password_hash": "$2b$12$FZxSFCxXqvgPrhkQHxvQxeBwZKqlWck5Ra8ec/760LsL0srk7cPpO",
+    "created_at": "2026-09-09T16:00:21.129818+00:00"
+  },
+  {
+    "email": "user_b_1788969621@cognisphere.ai",
+    "password_hash": "$2b$12$sRY9FceS1pzmh.PrRFTaqu/fLXf/lPjBlvmncap46HbgnUVDEBf8O",
+    "created_at": "2026-09-09T16:00:21.471967+00:00"
+  },
+  {
+    "email": "alice_sync_2b9c70@example.com",
+    "password_hash": "$2b$12$UwhCLzdLmkbvFrA.cDGIRuQecH3DKrIgPHwdcKBujCT93YEwop5MK",
+    "created_at": "2026-09-09T16:00:23.763557+00:00"
+  },
+  {
+    "email": "bob_sync_2b9c70@example.com",
+    "password_hash": "$2b$12$cuhSeLre6qPAndjDZQUn5OylC2tqr9afPP3Q5kRthpkkJd.vLoxv2",
+    "created_at": "2026-09-09T16:00:25.104929+00:00"
+  },
+  {
+    "email": "search_user_1788969626671@cognisphere.ai",
+    "password_hash": "$2b$12$4KLyqLqz8PfqE6mmsd4Wh.8V0W7VjncgYzyJRAlQ6GMjacOpzPjzi",
+    "created_at": "2026-09-09T16:00:26.966825+00:00"
+  },
+  {
+    "email": "watcher_user_a_1788969629@cognisphere.ai",
+    "password_hash": "$2b$12$TY7vZVMGkhsMjJrPX3fNBeKRIjvZjFOWMfcNVh7Rb6ANezb0OA8xi",
+    "created_at": "2026-09-09T16:00:29.451181+00:00"
+  },
+  {
+    "email": "watcher_user_b_1788969629@cognisphere.ai",
+    "password_hash": "$2b$12$zd1SdfQgcDKs.IJ5szESEuyu6yVVlWeh3B6z0RaE1WE4JTcIqJBDa",
+    "created_at": "2026-09-09T16:00:29.789879+00:00"
   }
 ]

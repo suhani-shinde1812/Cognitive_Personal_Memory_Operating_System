@@ -69,7 +69,7 @@ def watcher_status(
     if current_user:
         location_count = (
             db.query(WatcherLocation)
-            .filter(WatcherLocation.user_id == current_user.id, WatcherLocation.enabled.is_(True))
+            .filter(WatcherLocation.user_id == str(current_user.id), WatcherLocation.enabled.is_(True))
             .count()
         )
 
@@ -101,7 +101,7 @@ def list_locations(
     """
     locations = (
         db.query(WatcherLocation)
-        .filter(WatcherLocation.user_id == current_user.id)
+        .filter(WatcherLocation.user_id == str(current_user.id))
         .order_by(WatcherLocation.id.asc())
         .all()
     )
@@ -111,7 +111,7 @@ def list_locations(
         seeded = []
         for item in _get_standard_defaults():
             loc = WatcherLocation(
-                user_id=current_user.id,
+                user_id=str(current_user.id),
                 path=item["path"],
                 display_name=item["name"],
                 location_type=item.get("type", "standard"),
@@ -131,7 +131,7 @@ def list_locations(
         for item in _get_standard_defaults():
             if item["name"] not in existing_names:
                 new_loc = WatcherLocation(
-                    user_id=current_user.id,
+                    user_id=str(current_user.id),
                     path=item["path"],
                     display_name=item["name"],
                     location_type=item.get("type", "standard"),
@@ -159,7 +159,7 @@ def add_location(
     # Check if this exact path is already configured for this user
     existing = (
         db.query(WatcherLocation)
-        .filter(WatcherLocation.user_id == current_user.id, WatcherLocation.path == payload.path.strip())
+        .filter(WatcherLocation.user_id == str(current_user.id), WatcherLocation.path == payload.path.strip())
         .first()
     )
     if existing:
@@ -172,7 +172,7 @@ def add_location(
         return existing.to_dict()
 
     loc = WatcherLocation(
-        user_id=current_user.id,
+        user_id=str(current_user.id),
         path=payload.path.strip(),
         display_name=payload.display_name.strip(),
         location_type=payload.location_type or "custom",
@@ -195,7 +195,7 @@ def update_location(
     """Update settings or permission status for an authorized location."""
     loc = (
         db.query(WatcherLocation)
-        .filter(WatcherLocation.id == location_id, WatcherLocation.user_id == current_user.id)
+        .filter(WatcherLocation.id == location_id, WatcherLocation.user_id == str(current_user.id))
         .first()
     )
     if not loc:
@@ -222,7 +222,7 @@ def delete_location(
     """Revoke and remove an authorized watch location."""
     loc = (
         db.query(WatcherLocation)
-        .filter(WatcherLocation.id == location_id, WatcherLocation.user_id == current_user.id)
+        .filter(WatcherLocation.id == location_id, WatcherLocation.user_id == str(current_user.id))
         .first()
     )
     if not loc:
@@ -242,7 +242,7 @@ def pause_location(
     """Pause synchronization for a specific location."""
     loc = (
         db.query(WatcherLocation)
-        .filter(WatcherLocation.id == location_id, WatcherLocation.user_id == current_user.id)
+        .filter(WatcherLocation.id == location_id, WatcherLocation.user_id == str(current_user.id))
         .first()
     )
     if not loc:
@@ -263,7 +263,7 @@ def resume_location(
     """Resume synchronization for a specific location."""
     loc = (
         db.query(WatcherLocation)
-        .filter(WatcherLocation.id == location_id, WatcherLocation.user_id == current_user.id)
+        .filter(WatcherLocation.id == location_id, WatcherLocation.user_id == str(current_user.id))
         .first()
     )
     if not loc:

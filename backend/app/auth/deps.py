@@ -80,19 +80,23 @@ def _resolve_user_from_token(token: str, db: Session) -> Optional[User]:
 
     # 2. Check if this is a paired Desktop Agent device token (e.g. cs_...)
     device = db.query(SyncDevice).filter(SyncDevice.auth_token == token).first()
-    if device and device.user_id:
-        try:
-            user = db.query(User).filter(User.id == device.user_id).first()
-            if user:
-                return user
-        except Exception:
-            pass
-        try:
-            user = db.query(User).filter(User.id == str(device.user_id)).first()
-            if user:
-                return user
-        except Exception:
-            pass
+    if device:
+        if device.user_id:
+            try:
+                user = db.query(User).filter(User.id == str(device.user_id)).first()
+                if user:
+                    return user
+            except Exception:
+                pass
+        else:
+            try:
+                first_u = db.query(User).order_by(User.created_at.asc()).first()
+                if first_u:
+                    device.user_id = str(first_u.id)
+                    db.commit()
+                    return first_u
+            except Exception:
+                pass
 
     return None
 

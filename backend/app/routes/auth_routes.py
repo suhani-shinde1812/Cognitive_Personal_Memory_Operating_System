@@ -52,27 +52,21 @@ def _ensure_users_table_schema(db: Session) -> None:
     stmts = [
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR;",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR;",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR;",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at VARCHAR;",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at VARCHAR;",
-        "CREATE SEQUENCE IF NOT EXISTS users_id_seq;",
+        "ALTER TABLE users ALTER COLUMN name DROP NOT NULL;",
+        "ALTER TABLE users ALTER COLUMN id TYPE VARCHAR USING id::varchar;",
+        "ALTER TABLE sync_devices ADD COLUMN IF NOT EXISTS user_id VARCHAR;",
+        "ALTER TABLE sync_devices ALTER COLUMN user_id TYPE VARCHAR USING user_id::varchar;",
+        "ALTER TABLE watcher_locations ALTER COLUMN user_id TYPE VARCHAR USING user_id::varchar;",
+        "ALTER TABLE memories ALTER COLUMN user_id TYPE VARCHAR USING user_id::varchar;",
+        "ALTER TABLE goals ALTER COLUMN user_id TYPE VARCHAR USING user_id::varchar;",
+        "ALTER TABLE indexed_files ALTER COLUMN user_id TYPE VARCHAR USING user_id::varchar;",
     ]
     for s in stmts:
         try:
             db.execute(text(s))
-            db.commit()
-        except Exception:
-            db.rollback()
-    try:
-        db.execute(text("ALTER TABLE users ALTER COLUMN id TYPE INTEGER USING id::integer;"))
-        db.commit()
-    except Exception:
-        db.rollback()
-    try:
-        db.execute(text("ALTER TABLE users ALTER COLUMN id SET DEFAULT nextval('users_id_seq');"))
-        db.commit()
-    except Exception:
-        try:
-            db.execute(text("ALTER TABLE users ALTER COLUMN id SET DEFAULT nextval('users_id_seq')::text;"))
             db.commit()
         except Exception:
             db.rollback()
@@ -133,6 +127,7 @@ def register(req: RegisterRequest, response: Response, db: Session = Depends(get
     try:
         user = User(
             email=email,
+            name=email.split("@")[0],
             password_hash=hash_password(req.password),
         )
         db.add(user)
@@ -144,6 +139,7 @@ def register(req: RegisterRequest, response: Response, db: Session = Depends(get
         try:
             user = User(
                 email=email,
+                name=email.split("@")[0],
                 password_hash=hash_password(req.password),
             )
             db.add(user)

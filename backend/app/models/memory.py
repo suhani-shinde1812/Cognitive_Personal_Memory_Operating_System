@@ -36,7 +36,7 @@ class Memory(Base):
     parent_id        = Column(Integer, default=None, nullable=True)
 
     # Multi-user isolation
-    user_id          = Column(Integer, index=True,   nullable=True)
+    user_id          = Column(String, index=True,   nullable=True)
 
     def to_dict(self):
         import json

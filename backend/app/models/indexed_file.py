@@ -30,7 +30,7 @@ class IndexedFile(Base):
     memory_id        = Column(Integer, nullable=True)     # Links to memories.id
     error_message    = Column(Text, nullable=True)
     is_deleted       = Column(Boolean, default=False, nullable=False)
-    user_id          = Column(Integer, index=True, nullable=True)
+    user_id          = Column(String, index=True, nullable=True)
 
     def to_dict(self) -> dict:
         return {

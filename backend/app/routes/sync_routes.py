@@ -107,25 +107,26 @@ def pair_desktop_agent(
             "pairing_code": device.pairing_code,
         }
 
-    # 2. Logged-in user requesting a secure pairing code from web interface
-    if current_user:
-        chars = string.ascii_uppercase + string.digits
-        rand_suffix = "".join(random.choices(chars, k=5))
-        pairing_code = f"COG-{rand_suffix}"
+    # 2. Generating a new pairing code (whether authenticated or fallback)
+    chars = string.ascii_uppercase + string.digits
+    rand_suffix = "".join(random.choices(chars, k=5))
+    pairing_code = f"COG-{rand_suffix}"
 
-        return sync_service.pair_device(
-            device_name=payload.device_name or "Windows PC",
-            os_info=payload.os_info or "Windows",
-            user_id=current_user.id,
-            pairing_code=pairing_code,
-            status="pending_pairing",
-            db=db,
-        )
+    uid = str(current_user.id) if current_user else None
+    if not uid:
+        try:
+            first_u = db.query(User).order_by(User.created_at.asc()).first()
+            if first_u:
+                uid = str(first_u.id)
+        except Exception:
+            pass
 
-    # 3. Unauthenticated / direct fallback pairing (e.g. testing)
     return sync_service.pair_device(
         device_name=payload.device_name or "Windows PC",
         os_info=payload.os_info or "Windows",
+        user_id=uid,
+        pairing_code=pairing_code,
+        status="pending_pairing",
         db=db,
     )
 
@@ -136,7 +137,7 @@ def list_paired_devices(
     db: Session = Depends(get_db),
 ):
     """Lists paired desktop devices scoped to the authenticated user."""
-    user_id = current_user.id if current_user else None
+    user_id = str(current_user.id) if current_user else None
     return sync_service.get_sync_overview(db, user_id=user_id)
 
 
@@ -149,7 +150,7 @@ def unpair_device(
     """Unpairs/disconnects a desktop device."""
     query = db.query(SyncDevice).filter(SyncDevice.device_id == device_id)
     if current_user:
-        query = query.filter(SyncDevice.user_id == current_user.id)
+        query = query.filter(SyncDevice.user_id == str(current_user.id))
     device = query.first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -167,7 +168,7 @@ def pause_device(
     """Pauses synchronization on the target desktop device."""
     query = db.query(SyncDevice).filter(SyncDevice.device_id == device_id)
     if current_user:
-        query = query.filter(SyncDevice.user_id == current_user.id)
+        query = query.filter(SyncDevice.user_id == str(current_user.id))
     device = query.first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -186,7 +187,7 @@ def resume_device(
     """Resumes synchronization on the target desktop device."""
     query = db.query(SyncDevice).filter(SyncDevice.device_id == device_id)
     if current_user:
-        query = query.filter(SyncDevice.user_id == current_user.id)
+        query = query.filter(SyncDevice.user_id == str(current_user.id))
     device = query.first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")

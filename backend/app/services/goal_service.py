@@ -13,20 +13,20 @@ from app.models.goal import Goal
 from app.models.goal_memory import GoalMemory
 
 
-def create_goal(db: Session, name: str, description: str = "", parent_id: int = None, user_id: int | None = None) -> dict:
+def create_goal(db: Session, name: str, description: str = "", parent_id: int = None, user_id: str | int | None = None) -> dict:
     gama = GAMAService(db)
     goal = gama.ensure_goal_exists(name, description, parent_id)
-    if user_id is not None and goal.user_id != user_id:
-        goal.user_id = user_id
+    if user_id is not None and goal.user_id != str(user_id):
+        goal.user_id = str(user_id)
         db.commit()
         db.refresh(goal)
     return goal.to_dict()
 
 
-def get_all_goals(db: Session, user_id: int | None = None) -> list[dict]:
+def get_all_goals(db: Session, user_id: str | int | None = None) -> list[dict]:
     query = db.query(Goal)
     if user_id is not None:
-        query = query.filter(Goal.user_id == user_id)
+        query = query.filter(Goal.user_id == str(user_id))
     goals = query.all()
     return [g.to_dict() for g in goals]
 
@@ -37,10 +37,10 @@ def get_goal_progress(db: Session, goal_id: int) -> dict:
     return report.to_dict()
 
 
-def update_goal_status(db: Session, goal_id: int, status: str, user_id: int | None = None) -> dict | None:
+def update_goal_status(db: Session, goal_id: int, status: str, user_id: str | int | None = None) -> dict | None:
     query = db.query(Goal).filter(Goal.id == goal_id)
     if user_id is not None:
-        query = query.filter(Goal.user_id == user_id)
+        query = query.filter(Goal.user_id == str(user_id))
     goal = query.first()
     if not goal:
         return None
@@ -50,10 +50,10 @@ def update_goal_status(db: Session, goal_id: int, status: str, user_id: int | No
     return goal.to_dict()
 
 
-def delete_goal(db: Session, goal_id: int, user_id: int | None = None) -> bool:
+def delete_goal(db: Session, goal_id: int, user_id: str | int | None = None) -> bool:
     query = db.query(Goal).filter(Goal.id == goal_id)
     if user_id is not None:
-        query = query.filter(Goal.user_id == user_id)
+        query = query.filter(Goal.user_id == str(user_id))
     goal = query.first()
     if not goal:
         return False

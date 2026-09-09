@@ -5,7 +5,9 @@ echo    CogniSphere Desktop Agent — File ^& Memory Sync
 echo ======================================================
 echo.
 
-if exist "backend\.venv\Scripts\python.exe" (
+if exist ".venv\Scripts\python.exe" (
+    .venv\Scripts\python.exe desktop_agent\agent.py %*
+) else if exist "backend\.venv\Scripts\python.exe" (
     backend\.venv\Scripts\python.exe desktop_agent\agent.py %*
 ) else (
     python desktop_agent\agent.py %*

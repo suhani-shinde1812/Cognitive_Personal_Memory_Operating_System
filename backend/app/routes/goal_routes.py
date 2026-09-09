@@ -36,7 +36,7 @@ def list_goals(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return get_all_goals(db, user_id=current_user.id)
+    return get_all_goals(db, user_id=str(current_user.id))
 
 
 @router.post("/")
@@ -45,7 +45,7 @@ def add_goal(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return create_goal(db, payload.name, payload.description, payload.parent_id, user_id=current_user.id)
+    return create_goal(db, payload.name, payload.description, payload.parent_id, user_id=str(current_user.id))
 
 
 @router.get("/{goal_id}/progress")

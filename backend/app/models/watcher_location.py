@@ -8,7 +8,7 @@ class WatcherLocation(Base):
     __tablename__ = "watcher_locations"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, nullable=False, index=True)
+    user_id = Column(String, nullable=False, index=True)
     path = Column(String, nullable=False)
     display_name = Column(String, nullable=False)
     location_type = Column(String, default="standard")  # standard | custom | drive

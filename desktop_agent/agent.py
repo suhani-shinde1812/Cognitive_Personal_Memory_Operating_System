@@ -142,7 +142,12 @@ class DesktopAgent:
     def ensure_paired(self, pairing_code: Optional[str] = None, auth_token: Optional[str] = None) -> bool:
         """Ensures the agent is paired with the backend using pairing code or token."""
         if self.config.is_paired() and not pairing_code and not auth_token:
-            return True
+            if self.client.verify_credentials():
+                return True
+            print("[Agent] Saved device credentials were rejected by server (expired or reset). Re-pairing...")
+            self.config.device_id = ""
+            self.config.auth_token = ""
+            self.config.save()
 
         if not pairing_code and not auth_token:
             try:

@@ -7,6 +7,7 @@ SQLAlchemy model for user authentication and multi-tenant data isolation.
 
 from __future__ import annotations
 from datetime import datetime, timezone
+import uuid
 from sqlalchemy import Column, Integer, String, DateTime
 from database.database import Base
 
@@ -15,6 +16,7 @@ class User(Base):
     __tablename__ = "users"
 
     id            = Column(Integer, primary_key=True, index=True)
+    name          = Column(String, nullable=True)
     email         = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=True)
     created_at    = Column(String, default=lambda: datetime.now(timezone.utc).isoformat())
@@ -23,6 +25,7 @@ class User(Base):
     def to_dict(self):
         return {
             "id":         self.id,
+            "name":       self.name,
             "email":      self.email,
             "created_at": self.created_at,
             "updated_at": self.updated_at,

@@ -30,7 +30,7 @@ from ai.hybrid_search import build_bm25
 def pair_device(
     device_name: str,
     os_info: str = "Windows",
-    user_id: Optional[int] = None,
+    user_id: Optional[str | int] = None,
     pairing_code: Optional[str] = None,
     status: str = "connected",
     db: Session = None,
@@ -52,7 +52,7 @@ def pair_device(
         last_heartbeat=now,
         last_sync=None,
         created_at=now,
-        user_id=user_id,
+        user_id=str(user_id) if user_id else None,
         pairing_code=pairing_code,
     )
     db.add(device)
@@ -196,14 +196,14 @@ def sync_file_record(
         IndexedFile.memory_id.isnot(None),
     )
     if user_id is not None:
-        dedup_query = dedup_query.filter(IndexedFile.user_id == user_id)
+        dedup_query = dedup_query.filter(IndexedFile.user_id == str(user_id))
     existing_file = dedup_query.first()
 
     if existing_file and existing_file.memory_id:
         # Check that the memory actually exists
         mem_query = db.query(Memory).filter(Memory.id == existing_file.memory_id)
         if user_id is not None:
-            mem_query = mem_query.filter(Memory.user_id == user_id)
+            mem_query = mem_query.filter(Memory.user_id == str(user_id))
         existing_memory = mem_query.first()
         if existing_memory:
             # Re-use existing memory without redundant heavy AI parsing/embedding!
@@ -296,7 +296,7 @@ def sync_file_record(
         # Check if memory already exists for this source and user
         mem_query = db.query(Memory).filter(Memory.source == safe_filename)
         if user_id is not None:
-            mem_query = mem_query.filter(Memory.user_id == user_id)
+            mem_query = mem_query.filter(Memory.user_id == str(user_id))
         memory = mem_query.first()
 
         if not memory:
@@ -312,7 +312,7 @@ def sync_file_record(
                 objects=json.dumps(objects),
                 importance_score=0.5,
                 access_count=0,
-                user_id=user_id,
+                user_id=str(user_id) if user_id else None,
             )
             db.add(memory)
         else:
@@ -448,14 +448,14 @@ def delete_file_record(device_id: str, relative_path: str, db: Session) -> dict:
     }
 
 
-def get_sync_overview(db: Session, user_id: Optional[int] = None) -> dict:
+def get_sync_overview(db: Session, user_id: Optional[str | int] = None) -> dict:
     """Returns overview statistics for desktop sync scoped to the given user if provided."""
     dev_query = db.query(SyncDevice)
     file_query = db.query(IndexedFile).filter(IndexedFile.is_deleted == False)
 
     if user_id is not None:
-        dev_query = dev_query.filter(SyncDevice.user_id == user_id)
-        file_query = file_query.filter(IndexedFile.user_id == user_id)
+        dev_query = dev_query.filter(SyncDevice.user_id == str(user_id))
+        file_query = file_query.filter(IndexedFile.user_id == str(user_id))
 
     devices = dev_query.all()
     total_files = file_query.count()

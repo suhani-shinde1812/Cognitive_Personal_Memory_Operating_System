@@ -41,6 +41,27 @@ class BackendClient:
         except Exception:
             return False
 
+    def verify_credentials(self) -> bool:
+        """Verifies that existing device_id and auth_token are accepted by the server."""
+        if not self.config.is_paired():
+            return False
+        try:
+            url = f"{self.base_url}/sync/heartbeat"
+            payload = {
+                "device_id":       self.config.device_id,
+                "auth_token":      self.config.auth_token,
+                "status":          "connected",
+                "watched_folders": [],
+            }
+            res = self.session.post(url, json=payload, timeout=8)
+            if res.status_code == 200:
+                return True
+            elif res.status_code in (401, 403, 404):
+                return False
+            return True
+        except Exception:
+            return True
+
     def pair_device(
         self,
         device_name: str,

@@ -18,7 +18,7 @@ class Goal(Base):
     parent_id   = Column(Integer, ForeignKey("goals.id"), nullable=True)
     status      = Column(String,  default="active")   # active | completed | paused
     progress    = Column(Float,   default=0.0)
-    user_id     = Column(Integer, index=True, nullable=True)
+    user_id     = Column(String, index=True, nullable=True)
 
     def to_dict(self):
         return {

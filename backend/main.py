@@ -262,30 +262,36 @@ def _run_sqlite_migrations():
         except (sqlite3.OperationalError, Exception):
             pass  # Column already exists
 
+        # Add name column to users
+        try:
+            cur.execute("ALTER TABLE users ADD COLUMN name VARCHAR")
+        except (sqlite3.OperationalError, Exception):
+            pass
+
         # Add user_id column to memories
         try:
-            cur.execute("ALTER TABLE memories ADD COLUMN user_id INTEGER")
+            cur.execute("ALTER TABLE memories ADD COLUMN user_id VARCHAR")
             print("[Migration] Added 'user_id' column to memories.")
         except (sqlite3.OperationalError, Exception):
             pass
 
         # Add user_id column to goals
         try:
-            cur.execute("ALTER TABLE goals ADD COLUMN user_id INTEGER")
+            cur.execute("ALTER TABLE goals ADD COLUMN user_id VARCHAR")
             print("[Migration] Added 'user_id' column to goals.")
         except (sqlite3.OperationalError, Exception):
             pass
 
         # Add user_id column to sync_devices
         try:
-            cur.execute("ALTER TABLE sync_devices ADD COLUMN user_id INTEGER")
+            cur.execute("ALTER TABLE sync_devices ADD COLUMN user_id VARCHAR")
             print("[Migration] Added 'user_id' column to sync_devices.")
         except (sqlite3.OperationalError, Exception):
             pass
 
         # Add user_id column to indexed_files
         try:
-            cur.execute("ALTER TABLE indexed_files ADD COLUMN user_id INTEGER")
+            cur.execute("ALTER TABLE indexed_files ADD COLUMN user_id VARCHAR")
             print("[Migration] Added 'user_id' column to indexed_files.")
         except (sqlite3.OperationalError, Exception):
             pass
@@ -316,25 +322,49 @@ def _run_db_migrations():
     # so one failure (e.g. table not existing yet) cannot abort the rest.
     from sqlalchemy import text
 
+    # Clean up legacy foreign key constraints if any exist
+    fk_cleanup = [
+        "ALTER TABLE IF EXISTS watcher_locations DROP CONSTRAINT IF EXISTS watcher_locations_user_id_fkey;",
+        "ALTER TABLE IF EXISTS sync_devices DROP CONSTRAINT IF EXISTS sync_devices_user_id_fkey;",
+        "ALTER TABLE IF EXISTS memories DROP CONSTRAINT IF EXISTS memories_user_id_fkey;",
+        "ALTER TABLE IF EXISTS goals DROP CONSTRAINT IF EXISTS goals_user_id_fkey;",
+        "ALTER TABLE IF EXISTS indexed_files DROP CONSTRAINT IF EXISTS indexed_files_user_id_fkey;",
+    ]
+    for stmt in fk_cleanup:
+        try:
+            with engine.connect() as conn:
+                conn.execute(text(stmt))
+                conn.commit()
+        except Exception:
+            pass
+
     pg_migrations = [
-        # 1. users table columns
+        # 1. users table columns & compatibility
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR;",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR;",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR;",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at VARCHAR;",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at VARCHAR;",
-        # 2. sequence & id compatibility for users
-        "CREATE SEQUENCE IF NOT EXISTS users_id_seq;",
-        # 3. memories table columns
+        "ALTER TABLE users ALTER COLUMN name DROP NOT NULL;",
+        "ALTER TABLE users ALTER COLUMN id TYPE VARCHAR USING id::varchar;",
+        # 2. sync_devices table columns & type compatibility
+        "ALTER TABLE sync_devices ADD COLUMN IF NOT EXISTS user_id VARCHAR;",
+        "ALTER TABLE sync_devices ALTER COLUMN user_id TYPE VARCHAR USING user_id::varchar;",
+        "ALTER TABLE sync_devices ADD COLUMN IF NOT EXISTS pairing_code VARCHAR;",
+        # 3. watcher_locations table columns & type compatibility
+        "ALTER TABLE watcher_locations ADD COLUMN IF NOT EXISTS user_id VARCHAR;",
+        "ALTER TABLE watcher_locations ALTER COLUMN user_id TYPE VARCHAR USING user_id::varchar;",
+        # 4. memories table columns & type compatibility
         "ALTER TABLE memories ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;",
         "ALTER TABLE memories ADD COLUMN IF NOT EXISTS parent_id INTEGER;",
-        "ALTER TABLE memories ADD COLUMN IF NOT EXISTS user_id INTEGER;",
-        # 4. goals table columns
-        "ALTER TABLE goals ADD COLUMN IF NOT EXISTS user_id INTEGER;",
-        # 5. sync_devices table columns
-        "ALTER TABLE sync_devices ADD COLUMN IF NOT EXISTS user_id INTEGER;",
-        "ALTER TABLE sync_devices ADD COLUMN IF NOT EXISTS pairing_code VARCHAR;",
-        # 6. indexed_files table columns
-        "ALTER TABLE indexed_files ADD COLUMN IF NOT EXISTS user_id INTEGER;",
+        "ALTER TABLE memories ADD COLUMN IF NOT EXISTS user_id VARCHAR;",
+        "ALTER TABLE memories ALTER COLUMN user_id TYPE VARCHAR USING user_id::varchar;",
+        # 5. goals table columns & type compatibility
+        "ALTER TABLE goals ADD COLUMN IF NOT EXISTS user_id VARCHAR;",
+        "ALTER TABLE goals ALTER COLUMN user_id TYPE VARCHAR USING user_id::varchar;",
+        # 6. indexed_files table columns & type compatibility
+        "ALTER TABLE indexed_files ADD COLUMN IF NOT EXISTS user_id VARCHAR;",
+        "ALTER TABLE indexed_files ALTER COLUMN user_id TYPE VARCHAR USING user_id::varchar;",
     ]
 
     for stmt in pg_migrations:
@@ -344,34 +374,6 @@ def _run_db_migrations():
                 conn.commit()
         except Exception as err:
             print(f"[Migration] PostgreSQL statement notice ({stmt[:40]}...): {err}")
-
-    # Clean up legacy foreign key constraint if watcher_locations exists
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("ALTER TABLE IF EXISTS watcher_locations DROP CONSTRAINT IF EXISTS watcher_locations_user_id_fkey;"))
-            conn.commit()
-    except Exception:
-        pass
-
-    # Ensure users.id default sequence or integer type
-    try:
-        with engine.connect() as conn:
-            try:
-                conn.execute(text("ALTER TABLE users ALTER COLUMN id TYPE INTEGER USING id::integer;"))
-                conn.commit()
-            except Exception:
-                pass
-            try:
-                conn.execute(text("ALTER TABLE users ALTER COLUMN id SET DEFAULT nextval('users_id_seq');"))
-                conn.commit()
-            except Exception:
-                try:
-                    conn.execute(text("ALTER TABLE users ALTER COLUMN id SET DEFAULT nextval('users_id_seq')::text;"))
-                    conn.commit()
-                except Exception:
-                    pass
-    except Exception as _e:
-        print(f"[Migration] users.id sequence setup notice: {_e}")
 
     print("[CogniSphere] PostgreSQL migrations verified.")
 

@@ -125,13 +125,15 @@ export default function FolderPermissionsCard({
     async () => await generatePairingCode("My Windows PC", "Windows 11"),
     {
       onSuccess: (data) => {
-        if (data.pairing_code) {
+        if (data && data.pairing_code) {
           setPairingCode(data.pairing_code);
           toast.success("Pairing code generated!");
+        } else {
+          toast.error("Failed to generate pairing code. Please try again.");
         }
       },
-      onError: () => {
-        toast.error("Failed to generate pairing code");
+      onError: (err: any) => {
+        toast.error(err?.response?.data?.detail || "Failed to connect PC Watcher");
       },
     }
   );

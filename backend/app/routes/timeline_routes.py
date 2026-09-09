@@ -28,7 +28,7 @@ def get_timeline(
 ):
     query = db.query(Memory)
     if current_user:
-        query = query.filter(Memory.user_id == current_user.id)
+        query = query.filter(Memory.user_id == str(current_user.id))
     memories = (
         query
         .order_by(Memory.date.desc())
@@ -75,7 +75,7 @@ def timeline_range(
     """Return memories within a specific date range."""
     results = date_range_search(db, start, end)
     if current_user:
-        results = [r for r in results if r.get("user_id") == current_user.id]
+        results = [r for r in results if str(r.get("user_id")) == str(current_user.id)]
     return {"start": start, "end": end, "count": len(results), "results": results}
 
 
@@ -88,7 +88,7 @@ def recent_memories(
     """Return the N most recently added memories."""
     query = db.query(Memory)
     if current_user:
-        query = query.filter(Memory.user_id == current_user.id)
+        query = query.filter(Memory.user_id == str(current_user.id))
     memories = (
         query
         .order_by(Memory.date.desc())
