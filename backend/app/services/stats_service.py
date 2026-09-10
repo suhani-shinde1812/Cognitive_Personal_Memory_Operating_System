@@ -20,12 +20,16 @@ def get_full_stats(db: Session, user_id: int | None = None) -> dict:
     """
     Returns a comprehensive statistics snapshot scoped to a user.
     Called by stats_routes.py GET /stats/
+
+    IMPORTANT: Memory.user_id is stored as String (e.g. '1'), not int.
+    All filters must use str(user_id) to match correctly.
     """
     mem_query = db.query(Memory)
     goal_query = db.query(Goal)
     if user_id is not None:
-        mem_query = mem_query.filter(Memory.user_id == user_id)
-        goal_query = goal_query.filter(Goal.user_id == user_id)
+        uid_str = str(user_id)          # Memory.user_id is String column
+        mem_query = mem_query.filter(Memory.user_id == uid_str)
+        goal_query = goal_query.filter(Goal.user_id == uid_str)
 
     memories = mem_query.all()
     goals    = goal_query.all()

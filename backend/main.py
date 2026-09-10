@@ -152,6 +152,41 @@ def startup():
     # Lightweight database migrations (SQLite & PostgreSQL)
     _run_db_migrations()
 
+    # ── Fix user_id type mismatch ──────────────────────────────────────────────
+    # Memory.user_id is a String column. Old code set it as integer (user.id).
+    # This migration normalises all integer user_ids to their string equivalents.
+    try:
+        from database.database import SessionLocal as _SL
+        from app.models.memory import Memory as _M
+        from app.models.goal import Goal as _G
+        _db = _SL()
+        try:
+            # Find all unique user_ids across memories and goals
+            all_mem_uids = _db.execute(
+                "SELECT DISTINCT user_id FROM memories WHERE user_id IS NOT NULL"
+            ).fetchall()
+            fixed = 0
+            for row in all_mem_uids:
+                uid = row[0]
+                # If stored as integer representation (pure digits, no spaces)
+                if uid and str(uid).strip().lstrip('-').isdigit() and uid == uid.strip():
+                    str_uid = str(int(uid))
+                    if str_uid != uid:  # only update if different
+                        _db.execute(
+                            f"UPDATE memories SET user_id = '{str_uid}' WHERE user_id = '{uid}'"
+                        )
+                        fixed += 1
+            _db.commit()
+            if fixed:
+                print(f"[CogniSphere] Fixed {fixed} user_id type mismatches in memories.")
+        except Exception as _me:
+            _db.rollback()
+            print(f"[CogniSphere] user_id migration notice: {_me}")
+        finally:
+            _db.close()
+    except Exception as _mig_err:
+        print(f"[CogniSphere] user_id migration outer error: {_mig_err}")
+
     # Load memory cache and build FAISS index
     try:
         from app.services.database_service import (
@@ -185,6 +220,7 @@ def startup():
         start_watcher_thread()
     except Exception as e:
         print(f"[CogniSphere] Watcher startup error: {e}")
+
 
 
 @app.get("/")

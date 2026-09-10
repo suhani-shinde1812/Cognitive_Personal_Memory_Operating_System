@@ -16,8 +16,8 @@ import {
 export default function Dashboard() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { data: stats  } = useQuery("stats",  getStats,         { refetchInterval: 30000 });
-  const { data: recent } = useQuery("recent", () => getRecent(8));
+  const { data: stats  } = useQuery("stats",  getStats,         { refetchInterval: 5000 });
+  const { data: recent } = useQuery("recent", () => getRecent(8), { refetchInterval: 5000 });
   const { data: health, isSuccess } = useQuery("health", async () => {
     console.log("[CogniSphere] API URL:", API_BASE_URL);
     console.log("[CogniSphere] Health URL:", `${API_BASE_URL}/health`);

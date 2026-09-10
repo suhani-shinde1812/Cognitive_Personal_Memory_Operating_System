@@ -71,7 +71,7 @@ def keyword_search(query: str, db: Session, top_k: int = 10, user_id: int | None
         )
     )
     if user_id is not None:
-        q_filter = q_filter.filter(Memory.user_id == user_id)
+        q_filter = q_filter.filter(Memory.user_id == str(user_id))
     rows = q_filter.limit(top_k).all()
     results = []
     for m in rows:
@@ -90,7 +90,7 @@ def object_search(query: str, db: Session, top_k: int = 10, user_id: int | None 
     query_lower = query.lower()
     q_mem = db.query(Memory)
     if user_id is not None:
-        q_mem = q_mem.filter(Memory.user_id == user_id)
+        q_mem = q_mem.filter(Memory.user_id == str(user_id))
     all_memories = q_mem.all()
     results = []
 

@@ -179,8 +179,9 @@ def register(req: RegisterRequest, response: Response, db: Session = Depends(get
     try:
         unowned_count = db.query(Memory).filter(Memory.user_id.is_(None)).count()
         if unowned_count > 0:
-            db.query(Memory).filter(Memory.user_id.is_(None)).update({"user_id": user.id})
-            db.query(Goal).filter(Goal.user_id.is_(None)).update({"user_id": user.id})
+            # IMPORTANT: Memory.user_id is String — must use str(user.id)
+            db.query(Memory).filter(Memory.user_id.is_(None)).update({"user_id": str(user.id)})
+            db.query(Goal).filter(Goal.user_id.is_(None)).update({"user_id": str(user.id)})
             db.commit()
     except Exception as _e:
         db.rollback()

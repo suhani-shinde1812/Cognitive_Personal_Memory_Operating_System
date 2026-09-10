@@ -161,7 +161,7 @@ def run_pipeline(
     try:
         dup_query = db.query(Memory).filter(Memory.source == result["source"])
         if user_id is not None:
-            dup_query = dup_query.filter(Memory.user_id == user_id)
+            dup_query = dup_query.filter(Memory.user_id == str(user_id))
         existing = dup_query.first()
         if existing:
             print(f"[Pipeline] Skipping duplicate: {result['source']} for user={user_id}")

@@ -50,7 +50,8 @@ def get_all_memories(user_id: int | None = None) -> list[dict]:
         load_memory_cache()
 
     if user_id is not None:
-        return [m for m in _memory_cache if m.get("user_id") == user_id]
+        uid_str = str(user_id)  # cache stores user_id as str
+        return [m for m in _memory_cache if str(m.get("user_id") or "") == uid_str]
 
     return _memory_cache
 
@@ -63,7 +64,7 @@ def get_memory_by_id(memory_id: int, user_id: int | None = None) -> dict | None:
 
     for mem in _memory_cache:
         if mem["id"] == memory_id:
-            if user_id is not None and mem.get("user_id") != user_id:
+            if user_id is not None and str(mem.get("user_id") or "") != str(user_id):
                 return None
             return mem
 
@@ -76,7 +77,7 @@ def delete_memory(memory_id: int, user_id: int | None = None) -> bool:
     try:
         query = db.query(Memory).filter(Memory.id == memory_id)
         if user_id is not None:
-            query = query.filter(Memory.user_id == user_id)
+            query = query.filter(Memory.user_id == str(user_id))
         mem = query.first()
 
         if mem is None:
