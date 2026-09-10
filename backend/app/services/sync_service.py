@@ -276,10 +276,12 @@ def sync_file_record(
         ext = Path(safe_filename).suffix.lower()
         raw_title = Path(safe_filename).stem.replace("_", " ").replace("-", " ").title()
 
+        image = None
+        text = ""
+        objects = []
+
         if ext in (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"):
             image = f"/uploads/{safe_filename}"
-            text = ""
-            objects = []
         elif ext == ".pdf":
             try:
                 from ai.memory_pipeline import _run_pdf

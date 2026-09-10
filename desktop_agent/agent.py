@@ -25,6 +25,13 @@ from datetime import datetime, timezone
 # Ensure project root is on sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 from desktop_agent.config import AgentConfig
 from desktop_agent.scanner import FolderScanner, LocalManifest
 from desktop_agent.watcher import WatcherManager
@@ -266,7 +273,7 @@ class DesktopAgent:
                         "memory_id": res.get("memory_id"),
                         "synced_at": datetime.now(timezone.utc).isoformat(),
                     }, autosave=False)
-                    print(f"[Sync] ✓ {payload.get('filename')} → Memory #{res.get('memory_id')}")
+                    print(f"[Sync] [OK] {payload.get('filename')} -> Memory #{res.get('memory_id')}")
                     return job["id"], True, False
                 elif res and res.get("status_code") == 401:
                     return job["id"], False, True   # signal stop
