@@ -125,8 +125,23 @@ def async_enrich_memory(memory_id: int, file_path: str, user_id: Optional[int] =
         if not mem:
             return
 
-        text = mem.text_content or ""
-        title = mem.title or ""
+        # 0. Background OCR & Object Detection for images
+        ext = Path(file_path).suffix.lower()
+        if ext in (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"):
+            try:
+                from ai.memory_pipeline import _run_ocr, _run_object_detection
+                ocr_text = _run_ocr(file_path)
+                objects = _run_object_detection(file_path)
+                if ocr_text:
+                    mem.text_content = ocr_text
+                    text = ocr_text
+                    if not mem.description:
+                        mem.description = ocr_text[:500]
+                if objects:
+                    mem.objects = json.dumps(objects)
+                db.commit()
+            except Exception as img_err:
+                print(f"[SyncEnrichment] Image ML warning: {img_err}")
 
         # 1. Embeddings
         try:
@@ -261,28 +276,27 @@ def sync_file_record(
         ext = Path(safe_filename).suffix.lower()
         raw_title = Path(safe_filename).stem.replace("_", " ").replace("-", " ").title()
 
-        text = ""
-        objects = []
-        image = None
-        try:
-            if ext in (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"):
-                from ai.memory_pipeline import _run_ocr, _run_object_detection
-                text = _run_ocr(str(dest))
-                objects = _run_object_detection(str(dest))
-                image = f"/uploads/{safe_filename}"
-            elif ext == ".pdf":
+        if ext in (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"):
+            image = f"/uploads/{safe_filename}"
+            text = ""
+            objects = []
+        elif ext == ".pdf":
+            try:
                 from ai.memory_pipeline import _run_pdf
                 text = _run_pdf(str(dest))
-            elif ext in (".docx", ".doc"):
+            except Exception:
+                text = ""
+        elif ext in (".docx", ".doc"):
+            try:
                 from ai.memory_pipeline import _run_docx
                 text = _run_docx(str(dest))
-            else:
-                try:
-                    text = dest.read_text(encoding="utf-8", errors="ignore")
-                except Exception:
-                    text = ""
-        except Exception as extract_err:
-            print(f"[SyncService] Extraction warning: {extract_err}")
+            except Exception:
+                text = ""
+        else:
+            try:
+                text = dest.read_text(encoding="utf-8", errors="ignore")[:50000]
+            except Exception:
+                text = ""
 
         title = raw_title
         if text:

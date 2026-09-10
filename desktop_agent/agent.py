@@ -265,7 +265,7 @@ class DesktopAgent:
                         "mtime": payload.get("mtime"),
                         "memory_id": res.get("memory_id"),
                         "synced_at": datetime.now(timezone.utc).isoformat(),
-                    })
+                    }, autosave=False)
                     print(f"[Sync] ✓ {payload.get('filename')} → Memory #{res.get('memory_id')}")
                     return job["id"], True, False
                 elif res and res.get("status_code") == 401:
@@ -290,6 +290,7 @@ class DesktopAgent:
                                 return
                         except Exception as fe:
                             print(f"[Sync] Worker error: {fe}")
+                self.manifest.flush()
 
             # Process DELETE jobs sequentially (rare)
             for job in delete_jobs:
@@ -343,6 +344,7 @@ class DesktopAgent:
     def start(self) -> None:
         """Starts the desktop agent in background threads."""
         self.running = True
+        self.queue.reset_failed()
 
         # 1. Start queue worker
         self._worker_thread = threading.Thread(target=self._queue_worker_loop, daemon=True)

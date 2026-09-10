@@ -35,6 +35,8 @@ def compute_sha256(path: Path, chunk_size: int = 65536) -> str:
         return ""
 
 
+import threading
+
 class LocalManifest:
     """
     Persisted cache of indexed files and their SHA-256 hashes.
@@ -44,35 +46,55 @@ class LocalManifest:
     def __init__(self, manifest_path: Optional[Path] = None):
         self.path = manifest_path or MANIFEST_FILE
         self.entries: Dict[str, Dict[str, Any]] = {}
+        self._lock = threading.Lock()
+        self._dirty = False
         self.load()
 
     def load(self) -> None:
-        if self.path.exists():
-            try:
-                with open(self.path, "r", encoding="utf-8") as f:
-                    self.entries = json.load(f)
-            except Exception as e:
-                print(f"[Manifest] Error loading manifest: {e}")
-                self.entries = {}
+        with self._lock:
+            if self.path.exists():
+                try:
+                    with open(self.path, "r", encoding="utf-8") as f:
+                        self.entries = json.load(f)
+                except Exception as e:
+                    print(f"[Manifest] Error loading manifest: {e}")
+                    self.entries = {}
 
     def save(self) -> None:
+        with self._lock:
+            self._save_unlocked()
+
+    def _save_unlocked(self) -> None:
         try:
-            with open(self.path, "w", encoding="utf-8") as f:
+            tmp_path = self.path.with_suffix(".tmp")
+            with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(self.entries, f, indent=2)
+            tmp_path.replace(self.path)
+            self._dirty = False
         except Exception as e:
             print(f"[Manifest] Error saving manifest: {e}")
 
     def get(self, abs_path: str) -> Optional[Dict[str, Any]]:
-        return self.entries.get(abs_path)
+        with self._lock:
+            return self.entries.get(abs_path)
 
-    def set(self, abs_path: str, data: Dict[str, Any]) -> None:
-        self.entries[abs_path] = data
-        self.save()
+    def set(self, abs_path: str, data: Dict[str, Any], autosave: bool = True) -> None:
+        with self._lock:
+            self.entries[abs_path] = data
+            self._dirty = True
+            if autosave:
+                self._save_unlocked()
+
+    def flush(self) -> None:
+        with self._lock:
+            if self._dirty:
+                self._save_unlocked()
 
     def remove(self, abs_path: str) -> None:
-        if abs_path in self.entries:
-            del self.entries[abs_path]
-            self.save()
+        with self._lock:
+            if abs_path in self.entries:
+                del self.entries[abs_path]
+                self._save_unlocked()
 
 
 class FolderScanner:

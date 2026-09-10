@@ -24,11 +24,12 @@ router = APIRouter(prefix="/timeline", tags=["timeline"])
 def get_timeline(
     current_user: Optional[User] = Depends(get_optional_current_user),
     db: Session = Depends(get_db),
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(500, ge=1, le=5000),
 ):
     query = db.query(Memory)
     if current_user:
         query = query.filter(Memory.user_id == str(current_user.id))
+    total_count = query.count()
     memories = (
         query
         .order_by(Memory.date.desc())
@@ -62,7 +63,7 @@ def get_timeline(
         for month, mems in groups.items()
     ]
 
-    return {"total": len(memories), "groups": ordered}
+    return {"total": total_count, "groups": ordered}
 
 
 @router.get("/range")

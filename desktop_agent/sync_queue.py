@@ -22,8 +22,11 @@ class SyncQueue:
         self.db_path = db_path or QUEUE_DB
         self._init_db()
 
+    def _connect(self) -> sqlite3.Connection:
+        return sqlite3.connect(self.db_path, timeout=30.0)
+
     def _init_db(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS queue_jobs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,7 +44,7 @@ class SyncQueue:
     def enqueue(self, job_type: str, payload: Dict[str, Any]) -> int:
         """Adds a new job to the sync queue."""
         now = time.time()
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             cur = conn.cursor()
             # Avoid duplicate pending jobs for the same file
             rel_path = payload.get("relative_path")
@@ -63,7 +66,7 @@ class SyncQueue:
 
     def get_pending(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Fetches pending jobs with retries < 5."""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
             cur.execute("""
@@ -91,14 +94,14 @@ class SyncQueue:
 
     def mark_done(self, job_id: int) -> None:
         """Removes or marks completed job."""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             conn.execute("DELETE FROM queue_jobs WHERE id = ?", (job_id,))
             conn.commit()
 
     def mark_failed(self, job_id: int, error: str) -> None:
         """Increments retry count and sets error."""
         now = time.time()
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             conn.execute("""
                 UPDATE queue_jobs
                 SET retries = retries + 1,
@@ -109,13 +112,20 @@ class SyncQueue:
             conn.commit()
 
     def count_pending(self) -> int:
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             cur = conn.cursor()
             cur.execute("SELECT COUNT(*) FROM queue_jobs WHERE status = 'pending' AND retries < 5")
             return cur.fetchone()[0]
 
+    def reset_failed(self) -> int:
+        """Resets retries to 0 for all jobs with retries >= 5 so they can be re-attempted."""
+        with self._connect() as conn:
+            cur = conn.execute("UPDATE queue_jobs SET retries = 0 WHERE status = 'pending' AND retries >= 5")
+            conn.commit()
+            return cur.rowcount
+
     def clear(self) -> None:
         """Clears all jobs from the queue."""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             conn.execute("DELETE FROM queue_jobs")
             conn.commit()
