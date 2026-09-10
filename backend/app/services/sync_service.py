@@ -294,13 +294,21 @@ def sync_file_record(
                 text = _run_docx(str(dest))
             except Exception:
                 text = ""
+        elif ext in (
+            ".pptx", ".ppt", ".xlsx", ".xls", ".zip", ".rar", ".7z",
+            ".exe", ".bin", ".iso", ".tar", ".gz", ".mp3", ".mp4",
+            ".wav", ".avi", ".mkv", ".mov"
+        ):
+            text = ""
         else:
             try:
                 text = dest.read_text(encoding="utf-8", errors="ignore")[:50000]
             except Exception:
                 text = ""
 
-        title = raw_title
+        if text:
+            text = text.replace("\x00", "")
+        title = raw_title.replace("\x00", "")
         if text:
             import re
             is_generic = re.match(r"^(img|image|photo|dsc|doc|file|scan)\d*$", raw_title.lower())
