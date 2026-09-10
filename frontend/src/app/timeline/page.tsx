@@ -8,7 +8,11 @@ import { smartTitle, fileTypeIcon, fmtDate } from "@/utils/helpers";
 import { Clock } from "lucide-react";
 
 export default function TimelinePage() {
-  const { data, isLoading } = useQuery("timeline", () => getTimeline(200));
+  const { data, isLoading } = useQuery(
+    "timeline",
+    () => getTimeline(500),
+    { refetchInterval: 5000 }   // refresh every 5s while agent uploads
+  );
 
   return (
     <div className="p-6 max-w-3xl mx-auto">
@@ -16,7 +20,14 @@ export default function TimelinePage() {
         <h1 className="text-xl font-bold text-white flex items-center gap-2">
           <Clock size={20} className="text-brand-400" /> Timeline
         </h1>
-        <p className="text-sm text-gray-400 mt-0.5">All memories sorted by date</p>
+        <p className="text-sm text-gray-400 mt-0.5">
+          All memories sorted by date
+          {data?.total ? (
+            <span className="ml-2 px-2 py-0.5 rounded-full bg-brand-600/20 text-brand-400 text-xs font-semibold">
+              {data.total} total
+            </span>
+          ) : null}
+        </p>
       </div>
 
       {isLoading && (

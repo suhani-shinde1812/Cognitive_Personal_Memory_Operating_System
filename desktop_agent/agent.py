@@ -222,82 +222,96 @@ class DesktopAgent:
         }
 
     def _queue_worker_loop(self) -> None:
-        """Processes jobs from the local persistent sync queue."""
+        """Processes jobs from the local persistent sync queue with concurrent uploads."""
+        import concurrent.futures
+        CONCURRENCY = 5      # Upload 5 files at once
+        BATCH_SIZE  = 20     # Fetch 20 jobs per iteration
+        PACE_DELAY  = 0.3    # Seconds between batches (not per-file)
+
         while self.running:
-            jobs = self.queue.get_pending(limit=5)
+            jobs = self.queue.get_pending(limit=BATCH_SIZE)
             if not jobs:
                 time.sleep(2)
                 continue
 
-            for job in jobs:
+            sync_jobs   = [j for j in jobs if j["job_type"] == "SYNC"]
+            delete_jobs = [j for j in jobs if j["job_type"] == "DELETE"]
+
+            def _do_sync(job):
+                """Upload one file; returns (job_id, success, stop_agent)."""
+                if not self.running:
+                    return job["id"], False, False
+                payload = job["payload"]
+                abs_path = payload.get("abs_path")
+                if not self.is_path_authorized(abs_path):
+                    print(f"[Sync] Skipping (not authorized): {payload.get('filename')}")
+                    self.queue.mark_done(job["id"])
+                    return job["id"], True, False
+
+                res = self.client.sync_file(
+                    file_path=abs_path,
+                    relative_path=payload.get("relative_path"),
+                    sha256_hash=payload.get("sha256"),
+                    modified_at=(
+                        datetime.fromtimestamp(payload["mtime"], tz=timezone.utc).isoformat()
+                        if payload.get("mtime") else None
+                    ),
+                )
+                if res and res.get("success"):
+                    self.queue.mark_done(job["id"])
+                    self.manifest.set(abs_path, {
+                        "relative_path": payload.get("relative_path"),
+                        "sha256": payload.get("sha256"),
+                        "mtime": payload.get("mtime"),
+                        "memory_id": res.get("memory_id"),
+                        "synced_at": datetime.now(timezone.utc).isoformat(),
+                    })
+                    print(f"[Sync] ✓ {payload.get('filename')} → Memory #{res.get('memory_id')}")
+                    return job["id"], True, False
+                elif res and res.get("status_code") == 401:
+                    return job["id"], False, True   # signal stop
+                else:
+                    self.queue.mark_failed(job["id"], "Upload failed")
+                    return job["id"], False, False
+
+            # Run SYNC jobs concurrently
+            if sync_jobs:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=CONCURRENCY) as ex:
+                    futures = {ex.submit(_do_sync, j): j for j in sync_jobs}
+                    for fut in concurrent.futures.as_completed(futures):
+                        try:
+                            _, ok, stop_agent = fut.result()
+                            if stop_agent:
+                                print("\n[Agent] ⚠️ 401 from server — resetting pairing credentials.")
+                                self.config.device_id = ""
+                                self.config.auth_token = ""
+                                self.config.save()
+                                self.running = False
+                                return
+                        except Exception as fe:
+                            print(f"[Sync] Worker error: {fe}")
+
+            # Process DELETE jobs sequentially (rare)
+            for job in delete_jobs:
                 if not self.running:
                     break
+                rel_path = job["payload"].get("relative_path")
+                abs_path = job["payload"].get("abs_path")
+                if self.client.delete_file(rel_path):
+                    self.queue.mark_done(job["id"])
+                    if abs_path:
+                        self.manifest.remove(abs_path)
+                    print(f"[Sync] Removed from index: {rel_path}")
+                else:
+                    self.queue.mark_failed(job["id"], "Delete request failed")
 
-                job_id = job["id"]
-                job_type = job["job_type"]
-                payload = job["payload"]
+            # Show queue depth every batch so user knows progress
+            remaining = self.queue.count_pending()
+            if remaining > 0:
+                print(f"[Agent] Queue: {remaining} files remaining...")
 
-                try:
-                    if job_type == "SYNC":
-                        abs_path = payload.get("abs_path")
-                        if not self.is_path_authorized(abs_path):
-                            print(f"[Sync] Skipping upload for {payload.get('filename')}: folder is disabled or revoked.")
-                            self.queue.mark_done(job_id)
-                            continue
+            time.sleep(PACE_DELAY)
 
-                        rel_path = payload.get("relative_path")
-                        sha256 = payload.get("sha256")
-                        mtime = payload.get("mtime")
-                        mod_iso = datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat() if mtime else None
-
-                        res = self.client.sync_file(
-                            file_path=abs_path,
-                            relative_path=rel_path,
-                            sha256_hash=sha256,
-                            modified_at=mod_iso,
-                        )
-                        if res and res.get("success"):
-                            self.queue.mark_done(job_id)
-                            # Update local manifest
-                            self.manifest.set(abs_path, {
-                                "relative_path": rel_path,
-                                "sha256": sha256,
-                                "mtime": mtime,
-                                "memory_id": res.get("memory_id"),
-                                "synced_at": datetime.now(timezone.utc).isoformat(),
-                            })
-                            print(f"[Sync] Ingested: {payload.get('filename')} -> Memory #{res.get('memory_id')}")
-                        elif res and res.get("status_code") == 401:
-                            print("\n[Agent] ⚠️ Server rejected device authentication (401).")
-                            print("[Agent] The cloud backend was likely restarted or redeployed, resetting device pairing.")
-                            print("[Agent] Resetting local pairing credentials so you can pair with a fresh code.")
-                            self.config.device_id = ""
-                            self.config.auth_token = ""
-                            self.config.save()
-                            self.running = False
-                            print("[Agent] Stopping sync queue. Please generate a new pairing code from the CogniSphere Web UI.\n")
-                            break
-                        else:
-                            self.queue.mark_failed(job_id, "Sync upload failed")
-
-                    elif job_type == "DELETE":
-                        rel_path = payload.get("relative_path")
-                        abs_path = payload.get("abs_path")
-                        if self.client.delete_file(rel_path):
-                            self.queue.mark_done(job_id)
-                            if abs_path:
-                                self.manifest.remove(abs_path)
-                            print(f"[Sync] Removed from index: {rel_path}")
-                        else:
-                            self.queue.mark_failed(job_id, "Delete request failed")
-
-                except Exception as e:
-                    self.queue.mark_failed(job_id, str(e))
-
-                # Pacing: pause 1.5s between uploads to prevent cloud server memory overload
-                time.sleep(1.5)
-
-            time.sleep(1)
 
     def _heartbeat_loop(self) -> None:
         """Reports periodic heartbeat to the CogniSphere backend."""
