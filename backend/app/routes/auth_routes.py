@@ -44,19 +44,40 @@ class ChangePasswordRequest(BaseModel):
 
 
 def _ensure_users_table_schema(db: Session) -> None:
-    """Safely ensures users table has required columns and sequence in PostgreSQL."""
+    """Safely ensures users table has required columns and sequence in both SQLite and PostgreSQL."""
     from sqlalchemy import text
-    from database.database import is_sqlite
+    from database.database import is_sqlite, DATABASE_URL
     if is_sqlite:
+        import sqlite3
+        db_clean = DATABASE_URL.replace("sqlite:///", "").replace("sqlite://", "")
+        db_path = db_clean if db_clean else "reality_search.db"
+        try:
+            conn = sqlite3.connect(db_path)
+            cur = conn.cursor()
+            for col in ["password_hash", "hashed_password", "name", "email", "created_at", "updated_at"]:
+                try:
+                    cur.execute(f"ALTER TABLE users ADD COLUMN {col} VARCHAR")
+                except Exception:
+                    pass
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
         return
+
     stmts = [
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR;",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR;",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS hashed_password VARCHAR;",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR;",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at VARCHAR;",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at VARCHAR;",
+        "ALTER TABLE users ALTER COLUMN hashed_password DROP NOT NULL;",
+        "ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;",
         "ALTER TABLE users ALTER COLUMN name DROP NOT NULL;",
         "ALTER TABLE users ALTER COLUMN id TYPE VARCHAR USING id::varchar;",
+        "UPDATE users SET password_hash = hashed_password WHERE password_hash IS NULL AND hashed_password IS NOT NULL;",
+        "UPDATE users SET hashed_password = password_hash WHERE hashed_password IS NULL AND password_hash IS NOT NULL;",
         "ALTER TABLE sync_devices ADD COLUMN IF NOT EXISTS user_id VARCHAR;",
         "ALTER TABLE sync_devices ALTER COLUMN user_id TYPE VARCHAR USING user_id::varchar;",
         "ALTER TABLE watcher_locations ALTER COLUMN user_id TYPE VARCHAR USING user_id::varchar;",
@@ -106,8 +127,10 @@ def register(req: RegisterRequest, response: Response, db: Session = Depends(get
     if existing:
         # If the account exists but has an uninitialized/missing password hash (e.g. pre-existing PostgreSQL row),
         # automatically activate the account by setting their chosen password and logging them in!
-        if not existing.password_hash or not existing.password_hash.strip() or not existing.password_hash.startswith("$2"):
+        pwd_check = existing.password_hash or existing.hashed_password
+        if not pwd_check or not pwd_check.strip() or not pwd_check.startswith("$2"):
             existing.password_hash = hash_password(req.password)
+            existing.hashed_password = existing.password_hash
             db.commit()
             db.refresh(existing)
             token = create_access_token({"sub": str(existing.id), "email": existing.email})
@@ -124,11 +147,13 @@ def register(req: RegisterRequest, response: Response, db: Session = Depends(get
             detail="An account with this email address already exists. Please log in.",
         )
 
+    hashed = hash_password(req.password)
     try:
         user = User(
             email=email,
             name=email.split("@")[0],
-            password_hash=hash_password(req.password),
+            password_hash=hashed,
+            hashed_password=hashed,
         )
         db.add(user)
         db.commit()
@@ -140,7 +165,8 @@ def register(req: RegisterRequest, response: Response, db: Session = Depends(get
             user = User(
                 email=email,
                 name=email.split("@")[0],
-                password_hash=hash_password(req.password),
+                password_hash=hashed,
+                hashed_password=hashed,
             )
             db.add(user)
             db.commit()
@@ -225,15 +251,17 @@ def login(req: LoginRequest, response: Response, db: Session = Depends(get_db)):
 
     valid_pass = False
     if user:
+        pwd_check = user.password_hash or user.hashed_password
         # If the account exists in the database without an initialized bcrypt password,
         # set their password to what they just entered and log them in immediately!
-        if not user.password_hash or not user.password_hash.strip() or not user.password_hash.startswith("$2"):
+        if not pwd_check or not pwd_check.strip() or not pwd_check.startswith("$2"):
             user.password_hash = hash_password(req.password)
+            user.hashed_password = user.password_hash
             db.commit()
             db.refresh(user)
             valid_pass = True
         else:
-            valid_pass = verify_password(req.password, user.password_hash) or verify_password(req.password.strip(), user.password_hash)
+            valid_pass = verify_password(req.password, pwd_check) or verify_password(req.password.strip(), pwd_check)
 
     if not user or not valid_pass:
         raise HTTPException(
@@ -260,14 +288,15 @@ class ResetPasswordRequest(BaseModel):
 
 @router.post("/reset-password")
 def reset_password(req: ResetPasswordRequest, response: Response, db: Session = Depends(get_db)):
-    """Allows setting/resetting password for an account."""
+    """Sets a new password for the specified email without requiring old password."""
     email = req.email.strip().lower()
-    if not email or not req.password:
+    if not email or not EMAIL_REGEX.match(email):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email and password are required.",
+            detail="Please provide a valid email address.",
         )
-    if len(req.password) < 8:
+
+    if not req.password or len(req.password) < 8:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Password must be at least 8 characters long.",
@@ -280,11 +309,13 @@ def reset_password(req: ResetPasswordRequest, response: Response, db: Session = 
         _ensure_users_table_schema(db)
         user = db.query(User).filter(User.email == email).first()
 
+    new_hash = hash_password(req.password)
     if not user:
-        user = User(email=email, password_hash=hash_password(req.password))
+        user = User(email=email, password_hash=new_hash, hashed_password=new_hash)
         db.add(user)
     else:
-        user.password_hash = hash_password(req.password)
+        user.password_hash = new_hash
+        user.hashed_password = new_hash
 
     db.commit()
     db.refresh(user)
@@ -333,6 +364,7 @@ def change_password(
         )
 
     current_user.password_hash = hash_password(req.new_password)
+    current_user.hashed_password = current_user.password_hash
     db.commit()
 
     return {"status": "ok", "message": "Password changed successfully."}

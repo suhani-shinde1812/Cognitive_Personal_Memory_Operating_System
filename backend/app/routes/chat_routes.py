@@ -22,6 +22,7 @@ class ChatRequest(BaseModel):
     history: Optional[list[dict]] = None
 
 
+@router.post("")
 @router.post("/")
 def chat(
     payload: ChatRequest,

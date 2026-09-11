@@ -165,7 +165,7 @@ Assistant:
                 "prompt": prompt,
                 "stream": False,
             },
-            timeout=60,
+            timeout=(2.0, 45.0),
         )
 
         response.raise_for_status()

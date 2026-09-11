@@ -95,7 +95,7 @@ app.add_middleware(LoggingMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_origin_regex=r"^https?:\/\/.*\.onrender\.com$",
+    allow_origin_regex=r"^(https?:\/\/.*\.onrender\.com|https?:\/\/localhost(:\d+)?|https?:\/\/127\.0\.0\.1(:\d+)?)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -156,6 +156,7 @@ def startup():
     # Memory.user_id is a String column. Old code set it as integer (user.id).
     # This migration normalises all integer user_ids to their string equivalents.
     try:
+        from sqlalchemy import text as _text
         from database.database import SessionLocal as _SL
         from app.models.memory import Memory as _M
         from app.models.goal import Goal as _G
@@ -163,17 +164,18 @@ def startup():
         try:
             # Find all unique user_ids across memories and goals
             all_mem_uids = _db.execute(
-                "SELECT DISTINCT user_id FROM memories WHERE user_id IS NOT NULL"
+                _text("SELECT DISTINCT user_id FROM memories WHERE user_id IS NOT NULL")
             ).fetchall()
             fixed = 0
             for row in all_mem_uids:
                 uid = row[0]
                 # If stored as integer representation (pure digits, no spaces)
-                if uid and str(uid).strip().lstrip('-').isdigit() and uid == uid.strip():
+                if uid and str(uid).strip().lstrip('-').isdigit() and str(uid) == str(uid).strip():
                     str_uid = str(int(uid))
                     if str_uid != uid:  # only update if different
                         _db.execute(
-                            f"UPDATE memories SET user_id = '{str_uid}' WHERE user_id = '{uid}'"
+                            _text("UPDATE memories SET user_id = :str_uid WHERE user_id = :uid"),
+                            {"str_uid": str_uid, "uid": str(uid)},
                         )
                         fixed += 1
             _db.commit()
@@ -304,6 +306,18 @@ def _run_sqlite_migrations():
         except (sqlite3.OperationalError, Exception):
             pass
 
+        # Add password_hash column to users
+        try:
+            cur.execute("ALTER TABLE users ADD COLUMN password_hash VARCHAR")
+        except (sqlite3.OperationalError, Exception):
+            pass
+
+        # Add hashed_password column to users
+        try:
+            cur.execute("ALTER TABLE users ADD COLUMN hashed_password VARCHAR")
+        except (sqlite3.OperationalError, Exception):
+            pass
+
         # Add user_id column to memories
         try:
             cur.execute("ALTER TABLE memories ADD COLUMN user_id VARCHAR")
@@ -378,11 +392,32 @@ def _run_db_migrations():
         # 1. users table columns & compatibility
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR;",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR;",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS hashed_password VARCHAR;",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR;",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at VARCHAR;",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at VARCHAR;",
+        "ALTER TABLE users ALTER COLUMN hashed_password DROP NOT NULL;",
+        "ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;",
         "ALTER TABLE users ALTER COLUMN name DROP NOT NULL;",
         "ALTER TABLE users ALTER COLUMN id TYPE VARCHAR USING id::varchar;",
+        "UPDATE users SET password_hash = hashed_password WHERE password_hash IS NULL AND hashed_password IS NOT NULL;",
+        "UPDATE users SET hashed_password = password_hash WHERE hashed_password IS NULL AND password_hash IS NOT NULL;",
+        """
+        DO $$ 
+        DECLARE 
+            col record;
+        BEGIN 
+            FOR col IN 
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'users' 
+                  AND is_nullable = 'NO' 
+                  AND column_name NOT IN ('id', 'email')
+            LOOP 
+                EXECUTE format('ALTER TABLE users ALTER COLUMN %I DROP NOT NULL', col.column_name);
+            END LOOP; 
+        END $$;
+        """,
         # 2. sync_devices table columns & type compatibility
         "ALTER TABLE sync_devices ADD COLUMN IF NOT EXISTS user_id VARCHAR;",
         "ALTER TABLE sync_devices ALTER COLUMN user_id TYPE VARCHAR USING user_id::varchar;",
@@ -445,6 +480,7 @@ def _seed_persisted_users():
                     new_u = User(
                         email=em,
                         password_hash=pwd_hash,
+                        hashed_password=pwd_hash,
                         created_at=acc.get("created_at"),
                     )
                     db.add(new_u)
@@ -465,3 +501,10 @@ try:
     _seed_persisted_users()
 except Exception as _e:
     print(f"[CogniSphere] Schema initialization notice: {_e}")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+

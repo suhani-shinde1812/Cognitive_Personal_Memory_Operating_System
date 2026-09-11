@@ -1,3 +1,4 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
 # CogniSphere v2.0 — Backend Dependencies (Render Production)
 
 # Core & Security

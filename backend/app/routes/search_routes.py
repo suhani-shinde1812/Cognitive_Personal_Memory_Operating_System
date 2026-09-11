@@ -24,6 +24,7 @@ from app.auth.deps import get_optional_current_user
 router = APIRouter(prefix="/search", tags=["search"])
 
 
+@router.get("")
 @router.get("/")
 def search(
     q:       str = Query(..., description="Natural language query"),

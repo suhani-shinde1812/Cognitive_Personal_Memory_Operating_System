@@ -141,6 +141,7 @@ def get_upload_job_status(
     return job.to_dict()
 
 
+@router.post("", status_code=status.HTTP_202_ACCEPTED)
 @router.post("/", status_code=status.HTTP_202_ACCEPTED)
 async def upload_file(
     background_tasks: BackgroundTasks,

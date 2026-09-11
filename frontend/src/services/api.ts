@@ -1,7 +1,18 @@
 // 📁 LOCATION: frontend/src/services/api.ts
 import axios from "axios";
 
-let rawBase = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").trim();
+let rawBase = (process.env.NEXT_PUBLIC_API_URL || "").trim();
+
+// When running in the browser on Render, automatically route to Render backend if not explicitly set or set to localhost
+if (typeof window !== "undefined" && window.location.hostname.endsWith(".onrender.com")) {
+  if (!rawBase || rawBase.includes("localhost") || rawBase.includes("127.0.0.1")) {
+    rawBase = "https://cognisphere-backend-ya2y.onrender.com";
+  }
+}
+
+if (!rawBase) {
+  rawBase = "http://localhost:8000";
+}
 
 // Normalize Render internal service name or missing FQDN (e.g. "cognisphere-backend-ya2y" -> "https://cognisphere-backend-ya2y.onrender.com")
 if (!rawBase.includes(".") && !rawBase.startsWith("localhost") && !rawBase.startsWith("127.0.0.1") && !rawBase.includes(":")) {
