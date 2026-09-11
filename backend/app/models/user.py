@@ -15,7 +15,7 @@ from database.database import Base
 class User(Base):
     __tablename__ = "users"
 
-    id              = Column(Integer, primary_key=True, index=True)
+    id              = Column(Integer, primary_key=True, autoincrement=True, index=True)
     name            = Column(String, nullable=True)
     email           = Column(String, unique=True, index=True, nullable=False)
     password_hash   = Column(String, nullable=True)

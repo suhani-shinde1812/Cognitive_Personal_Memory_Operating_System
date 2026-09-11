@@ -58,36 +58,85 @@ def extract_token_from_request(request: Request) -> Optional[str]:
 
 def _resolve_user_from_token(token: str, db: Session) -> Optional[User]:
     """Helper to resolve a User from either a JWT access token or a paired SyncDevice auth_token."""
+    from sqlalchemy.exc import SQLAlchemyError
+    from sqlalchemy import cast, String
+
     # 1. Attempt JWT access token decode
     payload = decode_access_token(token)
     if payload and "sub" in payload:
-        sub_val = payload["sub"]
-        try:
-            user_id = int(sub_val)
-            user = db.query(User).filter(User.id == user_id).first()
-            if user:
-                return user
-        except (ValueError, TypeError):
-            pass
+        sub_str = str(payload["sub"]).strip()
 
-        # Fallback if user id is stored as string/varchar in PostgreSQL
+        # Try cast match first (safely compares both PostgreSQL VARCHAR and INTEGER against token string)
         try:
-            user = db.query(User).filter(User.id == str(sub_val)).first()
+            user = db.query(User).filter(cast(User.id, String) == sub_str).first()
             if user:
                 return user
+        except SQLAlchemyError:
+            db.rollback()
         except Exception:
             pass
 
-    # 2. Check if this is a paired Desktop Agent device token (e.g. cs_...)
-    device = db.query(SyncDevice).filter(SyncDevice.auth_token == token).first()
-    if device:
-        if device.user_id:
+        # Try integer lookup if column is integer
+        if sub_str.isdigit():
             try:
-                user = db.query(User).filter(User.id == str(device.user_id)).first()
+                user = db.query(User).filter(User.id == int(sub_str)).first()
                 if user:
                     return user
+            except SQLAlchemyError:
+                db.rollback()
             except Exception:
                 pass
+
+        # Direct match fallback
+        try:
+            user = db.query(User).filter(User.id == sub_str).first()
+            if user:
+                return user
+        except SQLAlchemyError:
+            db.rollback()
+        except Exception:
+            pass
+
+
+    # 2. Check if this is a paired Desktop Agent device token (e.g. cs_...)
+    device = None
+    try:
+        device = db.query(SyncDevice).filter(SyncDevice.auth_token == token).first()
+    except SQLAlchemyError:
+        db.rollback()
+    except Exception:
+        pass
+
+    if device:
+        if device.user_id:
+            dev_uid = str(device.user_id).strip()
+            try:
+                user = db.query(User).filter(User.id == dev_uid).first()
+                if user:
+                    return user
+            except SQLAlchemyError:
+                db.rollback()
+            except Exception:
+                pass
+
+            try:
+                user = db.query(User).filter(cast(User.id, String) == dev_uid).first()
+                if user:
+                    return user
+            except SQLAlchemyError:
+                db.rollback()
+            except Exception:
+                pass
+
+            if dev_uid.isdigit():
+                try:
+                    user = db.query(User).filter(User.id == int(dev_uid)).first()
+                    if user:
+                        return user
+                except SQLAlchemyError:
+                    db.rollback()
+                except Exception:
+                    pass
         else:
             try:
                 first_u = db.query(User).order_by(User.created_at.asc()).first()
@@ -96,7 +145,7 @@ def _resolve_user_from_token(token: str, db: Session) -> Optional[User]:
                     db.commit()
                     return first_u
             except Exception:
-                pass
+                db.rollback()
 
     return None
 
